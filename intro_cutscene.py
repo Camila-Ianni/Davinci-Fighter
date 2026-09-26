@@ -359,21 +359,29 @@ class IntroCutscene:
                 else:
                     raw_sheet = raw_sheet.convert()
 
-                # 1. Edificio completo + Cielo + Cartel DAVINCI FIGHTER II
-                building_surf = raw_sheet.subsurface(pygame.Rect(731, 0, 473, 860)).copy()
+                # 1. Edificio completo + Cielo + Cartel DAVINCI FIGHTER II (sin el zócalo verde inferior de y=715..860)
+                building_surf = raw_sheet.subsurface(pygame.Rect(731, 0, 473, 715)).copy()
                 
-                # 2. Multitud (3 frames de animación limpios y sólidos)
+                # 2. Multitud (3 frames de animación limpios y sólidos sin líneas verdes de borde)
                 h_crowd = 446
                 if has_native_alpha:
                     crowd_frames = [
-                        raw_sheet.subsurface(pygame.Rect(731, 860, 473, 148)).copy(),
-                        raw_sheet.subsurface(pygame.Rect(731, 1008, 473, 149)).copy(),
-                        raw_sheet.subsurface(pygame.Rect(731, 1157, 473, 149)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 862, 473, 146)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 1008, 473, 148)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 1157, 473, 142)).copy(),
                     ]
+                    # Limpiar cualquier pixel verde residual de los bordes superior e inferior
+                    for c_frame in crowd_frames:
+                        cw, ch = c_frame.get_size()
+                        for y in list(range(4)) + list(range(ch - 4, ch)):
+                            for x in range(cw):
+                                r, g, b, a = c_frame.get_at((x, y))
+                                if (g > r + 20 and g > b + 15) or (r <= 45 and g >= 45 and b >= 45):
+                                    c_frame.set_at((x, y), (0, 0, 0, 0))
                 else:
                     h_sub = int(h_crowd / 3.0)
                     crowd_frames = [
-                        self._clean_crowd_frame(raw_sheet, (731, int(860 + i * (h_crowd / 3.0)), 473, h_sub - 10))
+                        self._clean_crowd_frame(raw_sheet, (731, int(862 + i * (h_crowd / 3.0)), 473, h_sub - 12))
                         for i in range(3)
                     ]
                 
@@ -762,7 +770,7 @@ class IntroCutscene:
                 scene_surf.fill((0, 0, 0))
 
                 scale_b = target_w / 473.0
-                total_b_h = int(860 * scale_b)
+                total_b_h = int(self.building_surf.get_height() * scale_b)
                 max_cam_y = total_b_h - target_h
 
                 # Subfase A: Pelea callejera frente a la multitud (0.0 .. 6.0s)
@@ -784,19 +792,20 @@ class IntroCutscene:
                         scene_surf.blit(sc_crowd, (0, target_h - sc_crowd_h))
 
                     # 1. Postura inicial de guardia (Luchador moreno a la IZQUIERDA, rubio a la DERECHA)
+                    # Bajados para asentar firmemente la base en el suelo
                     if t < 4.8:
-                        bob = int(math.sin(t * 6.0) * 3)
+                        bob = int(math.sin(t * 6.0) * 2)
                         sbr = pygame.transform.scale(self.op_brown_stance, (int(self.op_brown_stance.get_width() * sc_f), int(self.op_brown_stance.get_height() * sc_f)))
                         sb = pygame.transform.scale(self.op_blonde_idle, (int(self.op_blonde_idle.get_width() * sc_f), int(self.op_blonde_idle.get_height() * sc_f)))
-                        scene_surf.blit(sbr, (100, target_h - sbr.get_height() + 8 - bob))
-                        scene_surf.blit(sb, (540, target_h - sb.get_height() + 8 + bob))
+                        scene_surf.blit(sbr, (100, target_h - sbr.get_height() + 25 - bob))
+                        scene_surf.blit(sb, (540, target_h - sb.get_height() + 25 + bob))
                     # 2. Puñetazo certero de impacto hacia la izquierda (4.8s .. 5.2s)
                     elif t < 5.2:
                         shake_x = (int(t * 50) % 3 - 1) * 4
                         sb_p = pygame.transform.scale(self.op_blonde_punch, (int(self.op_blonde_punch.get_width() * sc_f), int(self.op_blonde_punch.get_height() * sc_f)))
                         sbr_f = pygame.transform.scale(self.op_brown_fall, (int(self.op_brown_fall.get_width() * sc_f), int(self.op_brown_fall.get_height() * sc_f)))
-                        scene_surf.blit(sbr_f, (60 + shake_x, target_h - sbr_f.get_height() + 8))
-                        scene_surf.blit(sb_p, (240 + shake_x, target_h - sb_p.get_height() + 8))
+                        scene_surf.blit(sbr_f, (60 + shake_x, target_h - sbr_f.get_height() + 25))
+                        scene_surf.blit(sb_p, (240 + shake_x, target_h - sb_p.get_height() + 25))
                         if (int(t * 30) % 2) == 0 and hasattr(self, "op_spark") and self.op_spark is not None:
                             ssp = pygame.transform.scale(self.op_spark, (int(self.op_spark.get_width() * sc_f * 2.2), int(self.op_spark.get_height() * sc_f * 2.2)))
                             scene_surf.blit(ssp, (260 + shake_x, target_h - 260))
@@ -805,10 +814,10 @@ class IntroCutscene:
                         fall_prog = (t - 5.2) / 0.8
                         sbr_f = pygame.transform.scale(self.op_brown_fall, (int(self.op_brown_fall.get_width() * sc_f), int(self.op_brown_fall.get_height() * sc_f)))
                         fall_x = 60 - int(fall_prog * 220)
-                        fall_y = target_h - sbr_f.get_height() + 8 + int(fall_prog * 130)
+                        fall_y = target_h - sbr_f.get_height() + 25 + int(fall_prog * 140)
                         sb_p = pygame.transform.scale(self.op_blonde_punch, (int(self.op_blonde_punch.get_width() * sc_f), int(self.op_blonde_punch.get_height() * sc_f)))
                         scene_surf.blit(sbr_f, (fall_x, fall_y))
-                        scene_surf.blit(sb_p, (240, target_h - sb_p.get_height() + 8))
+                        scene_surf.blit(sb_p, (240, target_h - sb_p.get_height() + 25))
 
                     # INSERT COIN parpadeante centrado en pantalla durante la pelea
                     if int(t * 4.0) % 2 == 0:

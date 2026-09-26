@@ -339,6 +339,7 @@ class IntroCutscene:
         self.credits_surf = None
 
         opening_assets_paths = [
+            os.path.join("assets", "backgrounds", "opening assets (1).png"),
             os.path.join("assets", "backgrounds", "opening assets.PNG"),
             os.path.join("assets", "backgrounds", "opening assets.png"),
         ]
@@ -350,25 +351,47 @@ class IntroCutscene:
 
         if chosen_opening_asset:
             try:
-                raw_sheet = pygame.image.load(chosen_opening_asset).convert()
+                # Verificar si la imagen ya tiene canal alfa nativo transparente
+                raw_sheet = pygame.image.load(chosen_opening_asset)
+                has_native_alpha = (raw_sheet.get_bytesize() == 4) or bool(raw_sheet.get_flags() & pygame.SRCALPHA)
+                if has_native_alpha:
+                    raw_sheet = raw_sheet.convert_alpha()
+                else:
+                    raw_sheet = raw_sheet.convert()
+
                 # 1. Edificio completo + Cielo + Cartel DAVINCI FIGHTER II
                 building_surf = raw_sheet.subsurface(pygame.Rect(731, 0, 473, 860)).copy()
                 
-                # 2. Multitud (3 frames de animación limpios y sólidos sin fondo verde)
+                # 2. Multitud (3 frames de animación limpios y sólidos)
                 h_crowd = 446
-                h_sub = int(h_crowd / 3.0)
-                crowd_frames = [
-                    self._clean_crowd_frame(raw_sheet, (731, int(860 + i * (h_crowd / 3.0)), 473, h_sub - 10))
-                    for i in range(3)
-                ]
+                if has_native_alpha:
+                    crowd_frames = [
+                        raw_sheet.subsurface(pygame.Rect(731, 860, 473, 148)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 1008, 473, 149)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 1157, 473, 149)).copy(),
+                    ]
+                else:
+                    h_sub = int(h_crowd / 3.0)
+                    crowd_frames = [
+                        self._clean_crowd_frame(raw_sheet, (731, int(860 + i * (h_crowd / 3.0)), 473, h_sub - 10))
+                        for i in range(3)
+                    ]
                 
-                # 3. Luchadores y efectos con transparencia limpia y sin huecos
-                op_spark = self._clean_sprite(raw_sheet, (184, 663, 57, 57))
-                op_blonde_idle = self._clean_sprite(raw_sheet, (559, 651, 169, 151))
-                op_blonde_punch = self._clean_sprite(raw_sheet, (247, 662, 308, 140))
-                op_brown_stance = self._clean_sprite(raw_sheet, (560, 1143, 168, 145))
-                op_fight_hit = self._clean_sprite(raw_sheet, (157, 1077, 393, 211))
-                op_brown_fall = self._clean_sprite(raw_sheet, (0, 1042, 151, 245))
+                # 3. Luchadores y efectos con transparencia limpia
+                if has_native_alpha:
+                    op_spark = raw_sheet.subsurface(pygame.Rect(184, 663, 57, 57)).copy()
+                    op_blonde_idle = raw_sheet.subsurface(pygame.Rect(559, 651, 169, 151)).copy()
+                    op_blonde_punch = raw_sheet.subsurface(pygame.Rect(247, 662, 308, 140)).copy()
+                    op_brown_stance = raw_sheet.subsurface(pygame.Rect(560, 1143, 168, 145)).copy()
+                    op_fight_hit = raw_sheet.subsurface(pygame.Rect(157, 1077, 393, 211)).copy()
+                    op_brown_fall = raw_sheet.subsurface(pygame.Rect(0, 1042, 151, 245)).copy()
+                else:
+                    op_spark = self._clean_sprite(raw_sheet, (184, 663, 57, 57))
+                    op_blonde_idle = self._clean_sprite(raw_sheet, (559, 651, 169, 151))
+                    op_blonde_punch = self._clean_sprite(raw_sheet, (247, 662, 308, 140))
+                    op_brown_stance = self._clean_sprite(raw_sheet, (560, 1143, 168, 145))
+                    op_fight_hit = self._clean_sprite(raw_sheet, (157, 1077, 393, 211))
+                    op_brown_fall = self._clean_sprite(raw_sheet, (0, 1042, 151, 245))
 
                 # 4. Title assets para las fases de Zoom, Achicar/Agrandar y Textos Animados
                 title_logo_path = os.path.join("assets", "title", "logo_davinci_fighters.png")

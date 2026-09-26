@@ -62,7 +62,7 @@ class IntroCutscene:
         self.explicit_audio_path = audio_path is not None
 
         self.cache_dir = cache_dir or os.path.join("assets", "intro_frames")
-        self.video_path = video_path or os.path.join("assets", "Street Fighters.mov")
+        self.video_path = video_path or (os.path.join("assets", "Pelea.mov") if os.path.exists(os.path.join("assets", "Pelea.mov")) else os.path.join("assets", "Street Fighters.mov"))
         self.audio_path = audio_path or os.path.join("assets", "audio", "intro_cutscene.wav")
 
         self.screen_width = screen.get_width() if screen else self.CANVAS_WIDTH
@@ -537,8 +537,9 @@ class IntroCutscene:
         else:
             video_candidates = [
                 self.video_path,
-                os.path.join("assets", "opening video.mov"),
+                os.path.join("assets", "Pelea.mov"),
                 os.path.join("assets", "Street Fighters.mov"),
+                os.path.join("assets", "opening video.mov"),
             ]
         for vp in video_candidates:
             if vp and os.path.exists(vp):
@@ -628,6 +629,24 @@ class IntroCutscene:
         surf = pygame.Surface((self.TARGET_WIDTH, self.TARGET_HEIGHT))
         surf.fill((10, 15, 30))
         self.current_surface = surf
+
+    def _get_pelea_frame(self, idx):
+        """Retorna el frame de la pelea en alta calidad desde assets/pelea_frames/."""
+        if not hasattr(self, "_pelea_cache"):
+            self._pelea_cache = {}
+        if idx in self._pelea_cache:
+            return self._pelea_cache[idx]
+        fpath = os.path.join("assets", "pelea_frames", f"frame_{idx:04d}.jpg")
+        if os.path.exists(fpath):
+            try:
+                surf = pygame.image.load(fpath)
+                if pygame.display.get_surface():
+                    surf = surf.convert()
+                self._pelea_cache[idx] = surf
+                return surf
+            except Exception:
+                pass
+        return None
 
     def handle_input(self, event) -> str | None:
         """Salto inmediato al presionar cualquier tecla o clic."""
@@ -816,78 +835,50 @@ class IntroCutscene:
                 total_b_h = int(self.building_surf.get_height() * scale_b)
                 max_cam_y = total_b_h - target_h
 
-                # Subfase A: Pelea callejera frente a la multitud (0.0 .. 6.0s)
-                if t < 6.0:
-                    cam_y = max_cam_y
-                    scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
-                    scene_surf.blit(scaled_building, (0, -int(cam_y)))
-
-                    sc_f = scale_b * 1.25
-
-                    # Multitud animada al fondo (asentada naturalmente sobre el zócalo)
-                    crowd_idx = int(t * 3.5) % 3
-                    if 5.2 <= t <= 6.0:
-                        crowd_idx = 2  # Brazos arriba celebrando el K.O.
-                    if hasattr(self, "crowd_frames") and self.crowd_frames:
-                        c_frame = self.crowd_frames[crowd_idx]
-                        sc_crowd_h = int(c_frame.get_height() * scale_b)
-                        sc_crowd = pygame.transform.scale(c_frame, (target_w, sc_crowd_h))
-                        scene_surf.blit(sc_crowd, (0, target_h - sc_crowd_h + 8))
-
-                    # 1. Postura inicial de guardia (Luchador moreno a la IZQUIERDA, rubio a la DERECHA)
-                    # Firmemente asentados en el piso sin rebotes flotantes
-                    if t < 4.8:
-                        bob = int(math.sin(t * 6.0) * 2)
+                # Subfase A: Video de la pelea en alta calidad (0.0 .. 7.35s)
+                # 408 frames extraídos directamente de Pelea.mov a 55.5 FPS
+                if t < 7.35:
+                    p_idx = min(407, max(0, int(t * 55.51)))
+                    p_surf = self._get_pelea_frame(p_idx)
+                    if p_surf is not None:
+                        scene_surf.blit(p_surf, (0, 0))
+                    else:
+                        cam_y = max_cam_y
+                        scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
+                        scene_surf.blit(scaled_building, (0, -int(cam_y)))
+                        if hasattr(self, "crowd_frames") and self.crowd_frames:
+                            c_frame = self.crowd_frames[int(t * 3.5) % 3]
+                            sc_crowd_h = int(c_frame.get_height() * scale_b)
+                            sc_crowd = pygame.transform.scale(c_frame, (target_w, sc_crowd_h))
+                            scene_surf.blit(sc_crowd, (0, target_h - sc_crowd_h + 8))
+                        sc_f = scale_b * 1.25
                         sbr = pygame.transform.scale(self.op_brown_stance, (int(self.op_brown_stance.get_width() * sc_f), int(self.op_brown_stance.get_height() * sc_f)))
                         sb = pygame.transform.scale(self.op_blonde_idle, (int(self.op_blonde_idle.get_width() * sc_f), int(self.op_blonde_idle.get_height() * sc_f)))
-                        scene_surf.blit(sbr, (60, target_h - sbr.get_height() + 8 - bob))
-                        scene_surf.blit(sb, (500, target_h - sb.get_height() + 8 + bob))
-                    # 2. Puñetazo certero de impacto hacia la izquierda (4.8s .. 5.2s)
-                    elif t < 5.2:
-                        shake_x = (int(t * 50) % 3 - 1) * 4
-                        sb_p = pygame.transform.scale(self.op_blonde_punch, (int(self.op_blonde_punch.get_width() * sc_f), int(self.op_blonde_punch.get_height() * sc_f)))
-                        sbr_f = pygame.transform.scale(self.op_brown_fall, (int(self.op_brown_fall.get_width() * sc_f), int(self.op_brown_fall.get_height() * sc_f)))
-                        scene_surf.blit(sbr_f, (20 + shake_x, target_h - sbr_f.get_height() + 8))
-                        scene_surf.blit(sb_p, (180 + shake_x, target_h - sb_p.get_height() + 8))
-                        if (int(t * 30) % 2) == 0 and hasattr(self, "op_spark") and self.op_spark is not None:
-                            ssp = pygame.transform.scale(self.op_spark, (int(self.op_spark.get_width() * sc_f * 2.2), int(self.op_spark.get_height() * sc_f * 2.2)))
-                            scene_surf.blit(ssp, (210 + shake_x, target_h - 260))
-                    # 3. Caída del rival hacia la izquierda y celebración (5.2s .. 6.0s)
-                    else:
-                        fall_prog = (t - 5.2) / 0.8
-                        sbr_f = pygame.transform.scale(self.op_brown_fall, (int(self.op_brown_fall.get_width() * sc_f), int(self.op_brown_fall.get_height() * sc_f)))
-                        fall_x = 20 - int(fall_prog * 220)
-                        fall_y = target_h - sbr_f.get_height() + 8 + int(fall_prog * 140)
-                        sb_p = pygame.transform.scale(self.op_blonde_punch, (int(self.op_blonde_punch.get_width() * sc_f), int(self.op_blonde_punch.get_height() * sc_f)))
-                        scene_surf.blit(sbr_f, (fall_x, fall_y))
-                        scene_surf.blit(sb_p, (180, target_h - sb_p.get_height() + 8))
+                        scene_surf.blit(sbr, (60, target_h - sbr.get_height() + 8))
+                        scene_surf.blit(sb, (500, target_h - sb.get_height() + 8))
 
-                    # INSERT COIN parpadeante centrado en pantalla durante la pelea
-                    if int(t * 4.0) % 2 == 0:
-                        self._draw_arcade_text(scene_surf, "INSERT COIN.", target_w // 2, 540)
-
-                # Subfase B: Paneo por el rascacielos hacia la cima (6.0 .. 9.8s)
-                elif t < 9.8:
-                    prog = (t - 6.0) / 3.8
+                # Subfase B: Transición fluida en la cima del edificio con cartel de Da Vinci Fighters (7.35 .. 9.2s)
+                elif t < 9.2:
+                    prog = (t - 7.35) / 1.85
                     ease = prog * prog * (3.0 - 2.0 * prog)
-                    cam_y = max_cam_y * (1.0 - ease)
+                    cam_y = int(max_cam_y * 0.22 * (1.0 - ease))
 
                     scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
                     scene_surf.blit(scaled_building, (0, -int(cam_y)))
 
-                # Subfase C: Cartel en la cima del rascacielos y Fade to Black suave (9.8 .. 11.4s)
-                elif t < 11.4:
+                # Subfase C: Cartel en la cima del rascacielos y Fade to Black suave (9.2 .. 10.8s)
+                elif t < 10.8:
                     scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
                     scene_surf.blit(scaled_building, (0, 0))
 
-                    if t >= 10.4:
-                        fade_black = min(1.0, (t - 10.4) / 1.0)
+                    if t >= 9.8:
+                        fade_black = min(1.0, (t - 9.8) / 1.0)
                         dim = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
                         dim.fill((0, 0, 0, int(255 * fade_black)))
                         scene_surf.blit(dim, (0, 0))
 
-                # Subfase D: Pantalla en negro con solo el título centrado y parpadeo de INSERT COIN (11.4 .. 13.3s)
-                elif t < 13.3:
+                # Subfase D: Pantalla en negro con solo el título centrado y parpadeo de INSERT COIN (10.8 .. 12.5s)
+                elif t < 12.5:
                     scene_surf.fill((0, 0, 0))
                     if getattr(self, "logo_title", None) is not None:
                         lw, lh = 720, int(720 * self.logo_title.get_height() / self.logo_title.get_width())
@@ -897,18 +888,18 @@ class IntroCutscene:
                     if int(t * 4.0) % 2 == 0:
                         self._draw_arcade_text(scene_surf, "INSERT COIN.", target_w // 2, 540)
 
-                # Subfase E: Pantalla azul marino de Capcom con título centrado (13.3 .. 13.8s)
-                elif t < 13.8:
+                # Subfase E: Pantalla azul marino de Capcom con título centrado (12.5 .. 13.0s)
+                elif t < 13.0:
                     scene_surf.fill((1, 9, 114))
                     if getattr(self, "logo_title", None) is not None:
                         lw, lh = 720, int(720 * self.logo_title.get_height() / self.logo_title.get_width())
                         s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
                         scene_surf.blit(s_logo, (target_w // 2 - lw // 2, 170))
 
-                # Subfase F: El logotipo se achica rápidamente hacia el centro (13.8 .. 14.5s)
-                elif t < 14.5:
+                # Subfase F: El logotipo se achica rápidamente hacia el centro (13.0 .. 13.7s)
+                elif t < 13.7:
                     scene_surf.fill((1, 9, 114))
-                    prog_s = (t - 13.8) / 0.7
+                    prog_s = (t - 13.0) / 0.7
                     sc = max(0.12, 1.0 - 0.88 * (prog_s ** 2))
                     if getattr(self, "logo_title", None) is not None:
                         base_h = int(720 * self.logo_title.get_height() / self.logo_title.get_width())
@@ -919,12 +910,11 @@ class IntroCutscene:
                         curr_y = int(start_y + (center_y - start_y) * prog_s)
                         scene_surf.blit(s_logo, (target_w // 2 - lw // 2, curr_y))
 
-                # Subfase G: El logotipo se agranda y sube mientras vuelan los banners (14.5 .. 16.0s)
-                elif t < 16.0:
+                # Subfase G: El logotipo se agranda y sube mientras vuelan los banners (13.7 .. 15.2s)
+                elif t < 15.2:
                     scene_surf.fill((1, 9, 114))
 
-                    # Logotipo agrandándose y subiendo a su posición superior (y = 65)
-                    prog_e = (t - 14.5) / 1.5
+                    prog_e = (t - 13.7) / 1.5
                     sc = max(0.15, min(1.0, 0.15 + 0.85 * math.sin(min(1.0, prog_e * 1.5) * math.pi / 2.0)))
                     if getattr(self, "logo_title", None) is not None:
                         base_h = int(740 * self.logo_title.get_height() / self.logo_title.get_width())
@@ -935,14 +925,14 @@ class IntroCutscene:
                         curr_y = int(start_y + (target_y - start_y) * min(1.0, prog_e * 1.3))
                         scene_surf.blit(s_logo, (target_w // 2 - lw // 2, curr_y))
 
-                    # Animación auténtica del banner SPECIAL CHAMPION EDITION volando en zig-zag (14.5 .. 16.0s)
+                    # Animación auténtica del banner SPECIAL CHAMPION EDITION volando en zig-zag (13.7 .. 15.2s)
                     if getattr(self, "banner_full", None) is not None:
                         w_full = 580
                         h_full = int(w_full * self.banner_full.get_height() / self.banner_full.get_width())
                         s_bfull = pygame.transform.smoothscale(self.banner_full, (w_full, h_full))
                         dest_x = target_w // 2 - w_full // 2
                         y_banner = 310
-                        t_b = t - 14.5
+                        t_b = t - 13.7
 
                         if t_b < 0.35:
                             # Pase 1: Izquierda a Derecha
@@ -964,17 +954,17 @@ class IntroCutscene:
 
                         scene_surf.blit(s_bfull, (curr_bx, y_banner))
 
-                        # Destello blanco de impacto al encajar (t = 15.90 .. 16.00)
-                        if 15.90 <= t <= 16.00:
+                        # Destello blanco de impacto al encajar (t = 15.10 .. 15.20)
+                        if 15.10 <= t <= 15.20:
                             flash_surf = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
                             flash_surf.fill((255, 255, 255, 180))
                             scene_surf.blit(flash_surf, (0, 0))
 
-                # Subfase H: Pantalla de Título Oficial (exacta al arcade) (16.0 .. 32.0s)
+                # Subfase H: Pantalla de Título Oficial (exacta al arcade) (t >= 15.2s)
                 else:
                     scene_surf.fill((1, 9, 114))
 
-                    # 1. Logotipo oficial
+                    # 1. Logotipo oficial DAVINCI FIGHTERS II
                     if getattr(self, "logo_title", None) is not None:
                         lw, lh = 740, int(740 * self.logo_title.get_height() / self.logo_title.get_width())
                         s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))

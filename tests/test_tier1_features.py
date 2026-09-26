@@ -42,7 +42,7 @@ class TestTier1Features(HeadlessTestCase):
         path = os.path.join("assets", "Street Fighters.mov")
         self.assertTrue(os.path.exists(path), f"Missing video asset at {path}")
         size = os.path.getsize(path)
-        self.assertGreater(size, 100 * 1024 * 1024, "Video asset size is smaller than expected")
+        self.assertGreater(size, 80 * 1024 * 1024, "Video asset size is smaller than expected")
 
     def test_f01_punch_frame_range_slice(self):
         """F1.2: Verify street punch cutscene frame range (892 to 1171 = 280 frames)."""

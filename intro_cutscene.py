@@ -311,6 +311,49 @@ class IntroCutscene:
 
         return surf_alpha
 
+    @staticmethod
+    def _clean_sprite_chroma(surf):
+        """Elimina por completo halos verdes (green chroma spill) y defringe los bordes."""
+        s = surf.copy()
+        w, h = s.get_size()
+        # Pass 1: transparent edge green removal
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = s.get_at((x, y))
+                if a == 0:
+                    continue
+                is_green = (g > r + 10 and g > b + 10) or (g > 55 and r < 60 and b < 60) or (g > 1.12 * max(r, b) and g > 45)
+                if is_green:
+                    is_edge = False
+                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1), (-1, 1), (1, -1)]:
+                        nx, ny = x + dx, y + dy
+                        if not (0 <= nx < w and 0 <= ny < h) or s.get_at((nx, ny))[3] == 0:
+                            is_edge = True
+                            break
+                    if is_edge:
+                        s.set_at((x, y), (0, 0, 0, 0))
+                    else:
+                        s.set_at((x, y), (r, int((r + b) / 2), b, a))
+
+        # Pass 2: second layer border cleanup and color neutralization
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = s.get_at((x, y))
+                if a == 0:
+                    continue
+                if (g > r + 6 and g > b + 6) or (g > 1.10 * max(r, b) and g > 40):
+                    is_edge = False
+                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        nx, ny = x + dx, y + dy
+                        if not (0 <= nx < w and 0 <= ny < h) or s.get_at((nx, ny))[3] == 0:
+                            is_edge = True
+                            break
+                    if is_edge:
+                        s.set_at((x, y), (0, 0, 0, 0))
+                    else:
+                        s.set_at((x, y), (r, int((r + b) / 2), b, a))
+        return s
+
     def _init_opening_assets(self):
         """Inicializa los sprites oficiales de la apertura y el título con caché en memoria."""
         global _CACHED_OPENING_ASSETS
@@ -359,40 +402,40 @@ class IntroCutscene:
                 else:
                     raw_sheet = raw_sheet.convert()
 
-                # 1. Edificio completo + Cielo + Cartel DAVINCI FIGHTER II (sin el zócalo verde inferior de y=715..860)
-                building_surf = raw_sheet.subsurface(pygame.Rect(731, 0, 473, 715)).copy()
+                # 1. Edificio completo + Cielo + Cartel DAVINCI FIGHTER II + Arbustos de base
+                building_surf = raw_sheet.subsurface(pygame.Rect(731, 0, 473, 852)).copy()
                 
                 # 2. Multitud (3 frames de animación limpios y sólidos sin líneas verdes de borde)
-                h_crowd = 446
                 if has_native_alpha:
                     crowd_frames = [
-                        raw_sheet.subsurface(pygame.Rect(731, 862, 473, 146)).copy(),
-                        raw_sheet.subsurface(pygame.Rect(731, 1008, 473, 148)).copy(),
-                        raw_sheet.subsurface(pygame.Rect(731, 1157, 473, 142)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 863, 473, 136)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 1009, 473, 138)).copy(),
+                        raw_sheet.subsurface(pygame.Rect(731, 1158, 473, 134)).copy(),
                     ]
-                    # Limpiar cualquier pixel verde residual de los bordes superior e inferior
                     for c_frame in crowd_frames:
                         cw, ch = c_frame.get_size()
-                        for y in list(range(4)) + list(range(ch - 4, ch)):
+                        for y in range(ch):
                             for x in range(cw):
                                 r, g, b, a = c_frame.get_at((x, y))
-                                if (g > r + 20 and g > b + 15) or (r <= 45 and g >= 45 and b >= 45):
-                                    c_frame.set_at((x, y), (0, 0, 0, 0))
+                                if a > 0 and (y < 4 or y > ch - 4):
+                                    if (g > r + 15 and g > b + 10) or (r < 50 and g > 50):
+                                        c_frame.set_at((x, y), (0, 0, 0, 0))
                 else:
+                    h_crowd = 446
                     h_sub = int(h_crowd / 3.0)
                     crowd_frames = [
                         self._clean_crowd_frame(raw_sheet, (731, int(862 + i * (h_crowd / 3.0)), 473, h_sub - 12))
                         for i in range(3)
                     ]
                 
-                # 3. Luchadores y efectos con transparencia limpia
+                # 3. Luchadores y efectos con defringing y eliminación completa de halo verde
                 if has_native_alpha:
-                    op_spark = raw_sheet.subsurface(pygame.Rect(184, 663, 57, 57)).copy()
-                    op_blonde_idle = raw_sheet.subsurface(pygame.Rect(559, 651, 169, 151)).copy()
-                    op_blonde_punch = raw_sheet.subsurface(pygame.Rect(247, 662, 308, 140)).copy()
-                    op_brown_stance = raw_sheet.subsurface(pygame.Rect(560, 1143, 168, 145)).copy()
-                    op_fight_hit = raw_sheet.subsurface(pygame.Rect(157, 1077, 393, 211)).copy()
-                    op_brown_fall = raw_sheet.subsurface(pygame.Rect(0, 1042, 151, 245)).copy()
+                    op_spark = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(184, 663, 57, 57)))
+                    op_blonde_idle = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(559, 651, 169, 151)))
+                    op_blonde_punch = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(247, 662, 308, 140)))
+                    op_brown_stance = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(560, 1143, 168, 145)))
+                    op_fight_hit = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(157, 1077, 393, 211)))
+                    op_brown_fall = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(0, 1042, 151, 245)))
                 else:
                     op_spark = self._clean_sprite(raw_sheet, (184, 663, 57, 57))
                     op_blonde_idle = self._clean_sprite(raw_sheet, (559, 651, 169, 151))
@@ -779,9 +822,9 @@ class IntroCutscene:
                     scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
                     scene_surf.blit(scaled_building, (0, -int(cam_y)))
 
-                    sc_f = scale_b * 1.05
+                    sc_f = scale_b * 1.25
 
-                    # Multitud animada al fondo (extendida al borde inferior)
+                    # Multitud animada al fondo (asentada naturalmente sobre el zócalo)
                     crowd_idx = int(t * 3.5) % 3
                     if 5.2 <= t <= 6.0:
                         crowd_idx = 2  # Brazos arriba celebrando el K.O.
@@ -789,35 +832,35 @@ class IntroCutscene:
                         c_frame = self.crowd_frames[crowd_idx]
                         sc_crowd_h = int(c_frame.get_height() * scale_b)
                         sc_crowd = pygame.transform.scale(c_frame, (target_w, sc_crowd_h))
-                        scene_surf.blit(sc_crowd, (0, target_h - sc_crowd_h))
+                        scene_surf.blit(sc_crowd, (0, target_h - sc_crowd_h + 8))
 
                     # 1. Postura inicial de guardia (Luchador moreno a la IZQUIERDA, rubio a la DERECHA)
-                    # Bajados para asentar firmemente la base en el suelo
+                    # Firmemente asentados en el piso sin rebotes flotantes
                     if t < 4.8:
                         bob = int(math.sin(t * 6.0) * 2)
                         sbr = pygame.transform.scale(self.op_brown_stance, (int(self.op_brown_stance.get_width() * sc_f), int(self.op_brown_stance.get_height() * sc_f)))
                         sb = pygame.transform.scale(self.op_blonde_idle, (int(self.op_blonde_idle.get_width() * sc_f), int(self.op_blonde_idle.get_height() * sc_f)))
-                        scene_surf.blit(sbr, (100, target_h - sbr.get_height() + 25 - bob))
-                        scene_surf.blit(sb, (540, target_h - sb.get_height() + 25 + bob))
+                        scene_surf.blit(sbr, (60, target_h - sbr.get_height() + 8 - bob))
+                        scene_surf.blit(sb, (500, target_h - sb.get_height() + 8 + bob))
                     # 2. Puñetazo certero de impacto hacia la izquierda (4.8s .. 5.2s)
                     elif t < 5.2:
                         shake_x = (int(t * 50) % 3 - 1) * 4
                         sb_p = pygame.transform.scale(self.op_blonde_punch, (int(self.op_blonde_punch.get_width() * sc_f), int(self.op_blonde_punch.get_height() * sc_f)))
                         sbr_f = pygame.transform.scale(self.op_brown_fall, (int(self.op_brown_fall.get_width() * sc_f), int(self.op_brown_fall.get_height() * sc_f)))
-                        scene_surf.blit(sbr_f, (60 + shake_x, target_h - sbr_f.get_height() + 25))
-                        scene_surf.blit(sb_p, (240 + shake_x, target_h - sb_p.get_height() + 25))
+                        scene_surf.blit(sbr_f, (20 + shake_x, target_h - sbr_f.get_height() + 8))
+                        scene_surf.blit(sb_p, (180 + shake_x, target_h - sb_p.get_height() + 8))
                         if (int(t * 30) % 2) == 0 and hasattr(self, "op_spark") and self.op_spark is not None:
                             ssp = pygame.transform.scale(self.op_spark, (int(self.op_spark.get_width() * sc_f * 2.2), int(self.op_spark.get_height() * sc_f * 2.2)))
-                            scene_surf.blit(ssp, (260 + shake_x, target_h - 260))
+                            scene_surf.blit(ssp, (210 + shake_x, target_h - 260))
                     # 3. Caída del rival hacia la izquierda y celebración (5.2s .. 6.0s)
                     else:
                         fall_prog = (t - 5.2) / 0.8
                         sbr_f = pygame.transform.scale(self.op_brown_fall, (int(self.op_brown_fall.get_width() * sc_f), int(self.op_brown_fall.get_height() * sc_f)))
-                        fall_x = 60 - int(fall_prog * 220)
-                        fall_y = target_h - sbr_f.get_height() + 25 + int(fall_prog * 140)
+                        fall_x = 20 - int(fall_prog * 220)
+                        fall_y = target_h - sbr_f.get_height() + 8 + int(fall_prog * 140)
                         sb_p = pygame.transform.scale(self.op_blonde_punch, (int(self.op_blonde_punch.get_width() * sc_f), int(self.op_blonde_punch.get_height() * sc_f)))
                         scene_surf.blit(sbr_f, (fall_x, fall_y))
-                        scene_surf.blit(sb_p, (240, target_h - sb_p.get_height() + 25))
+                        scene_surf.blit(sb_p, (180, target_h - sb_p.get_height() + 8))
 
                     # INSERT COIN parpadeante centrado en pantalla durante la pelea
                     if int(t * 4.0) % 2 == 0:

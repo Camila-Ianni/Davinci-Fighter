@@ -927,7 +927,7 @@ class IntroCutscene:
                             flash_surf.fill((255, 255, 255, 180))
                             scene_surf.blit(flash_surf, (0, 0))
 
-                # Subfase H: Créditos rojos, Copyright y Pantalla de Título Oficial (16.0 .. 32.0s)
+                # Subfase H: Pantalla de Título Oficial (exacta al arcade) (16.0 .. 32.0s)
                 else:
                     scene_surf.fill((1, 9, 114))
 
@@ -936,7 +936,7 @@ class IntroCutscene:
                         lw, lh = 740, int(740 * self.logo_title.get_height() / self.logo_title.get_width())
                         s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
                         logo_x = target_w // 2 - lw // 2
-                        logo_y = 65
+                        logo_y = 70
                         scene_surf.blit(s_logo, (logo_x, logo_y))
 
                     # 2. Banner SPECIAL CHAMPION EDITION encajado
@@ -946,16 +946,13 @@ class IntroCutscene:
                         s_bfull = pygame.transform.smoothscale(self.banner_full, (w_full, h_full))
                         scene_surf.blit(s_bfull, (target_w // 2 - w_full // 2, 310))
 
-                    # 3. Textos rojos de créditos y copyright oficiales limpios
-                    if getattr(self, "credits_surf", None) is not None:
-                        w_cred = 640
-                        h_cred = int(w_cred * self.credits_surf.get_height() / self.credits_surf.get_width())
-                        s_cred = pygame.transform.smoothscale(self.credits_surf, (w_cred, h_cred))
-                        scene_surf.blit(s_cred, (target_w // 2 - w_cred // 2, 395))
-
-                    # 4. Prompt arcade parpadeante oficial
+                    # 3. INSERT COIN parpadeante (titilando cada 0.4s)
                     if int(t * 4.0) % 2 == 0:
-                        self._draw_arcade_text(scene_surf, "PRESS ANY KEY TO START", target_w // 2, 590)
+                        self._draw_arcade_text(scene_surf, "INSERT COIN.", target_w // 2, 440)
+
+                    # 4. Textos limpios de copyright oficiales
+                    self._draw_arcade_text(scene_surf, "© CAPCOM 2025, 92, 93", target_w // 2, 540, small=True)
+                    self._draw_arcade_text(scene_surf, "LICENCED BY CAMILA IANNI", target_w // 2, 580, small=True)
 
                 # Renderizar escena centrada con pillarboxes
                 target.blit(scene_surf, (self.dest_x, self.dest_y))

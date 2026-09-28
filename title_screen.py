@@ -204,38 +204,34 @@ class TitleScreen:
             self.sheen_offset = (self.sheen_frame * self.sheen_speed) % self.sweep_width
         self._updated_this_frame = False
 
-        # 1. Fondo azul marino oficial de Capcom (1, 9, 114)
-        target.fill((1, 9, 114))
+        # 1. Fondo negro arcade oficial (0, 0, 0)
+        target.fill((0, 0, 0))
 
         # 2. Logotipo principal
         if hasattr(self, "logo_scaled") and self.logo_scaled:
             target.blit(self.logo_scaled, (self.logo_render_rect.x, self.logo_render_rect.y))
             self._render_sheen(target)
 
-        # 3. Banner SPECIAL CHAMPION EDITION
-        if hasattr(self, "banner_scaled") and self.banner_scaled:
-            target.blit(self.banner_scaled, (self.banner_rect.x, self.banner_rect.y))
-
-        # 4. INSERT COIN parpadeante (titilando ON / OFF)
+        # 3. INSERT COIN parpadeante (titilando ON / OFF)
         if (self.blink_timer // 25) % 2 == 0:
             if self.arcade_font:
                 txt_coin = self.arcade_font.render("INSERT COIN.", True, (255, 255, 255))
-                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 440))
+                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 480))
             else:
                 txt_coin = self.font.render("INSERT COIN.", True, COLOR_YELLOW)
-                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 440))
+                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 480))
 
-        # 5. Créditos y copyright limpios y oficiales
+        # 4. Créditos y copyright limpios y oficiales
         if self.arcade_font_sm:
             txt_c1 = self.arcade_font_sm.render("© CAPCOM 2025, 92, 93", True, (255, 255, 255))
             txt_c2 = self.arcade_font_sm.render("LICENCED BY CAMILA IANNI", True, (255, 255, 255))
-            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 540))
-            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 580))
+            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 560))
+            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 600))
         else:
             txt_c1 = self.font.render("© CAPCOM 2025, 92, 93", True, (240, 70, 20))
             txt_c2 = self.font.render("LICENCED BY CAMILA IANNI", True, (240, 70, 20))
-            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 540))
-            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 580))
+            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 560))
+            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 600))
 
         # Pillarboxes laterales arcade de 160px para relación de aspecto 4:3
         pygame.draw.rect(target, (0, 0, 0), (0, 0, 160, SCREEN_HEIGHT))

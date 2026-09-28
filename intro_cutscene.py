@@ -22,11 +22,14 @@ Soporta salto inmediato (skip) en cualquier momento con ESPACIO, ENTER, ESCAPE o
 
 import os
 import json
+import re
 import pygame
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_WHITE, COLOR_YELLOW, COLOR_RED, FPS
 from sprite_font import get_boot_font, get_warning_font
 
-_CACHED_OPENING_ASSETS = None
+DEFAULT_FIGHT_FRAME_DIR = os.path.join("assets", "pelea_frames")
+DEFAULT_FIGHT_VIDEO = os.path.join("assets", "Pelea.mov")
+FRAME_FILE_RE = re.compile(r"^frame_\d{4}\.(?:jpg|jpeg|png)$", re.IGNORECASE)
 
 
 class IntroCutscene:
@@ -61,8 +64,11 @@ class IntroCutscene:
         self.explicit_video_path = video_path is not None
         self.explicit_audio_path = audio_path is not None
 
-        self.cache_dir = cache_dir or os.path.join("assets", "intro_frames")
-        self.video_path = video_path or (os.path.join("assets", "Pelea.mov") if os.path.exists(os.path.join("assets", "Pelea.mov")) else os.path.join("assets", "Street Fighters.mov"))
+        # La pelea tiene una única fuente autorizada: los frames extraídos de
+        # Pelea.mov. No se reutiliza intro_frames ni ningún spritesheet como
+        # sustituto visual de esta fase.
+        self.cache_dir = cache_dir or DEFAULT_FIGHT_FRAME_DIR
+        self.video_path = video_path or DEFAULT_FIGHT_VIDEO
         self.audio_path = audio_path or os.path.join("assets", "audio", "intro_cutscene.wav")
 
         self.screen_width = screen.get_width() if screen else self.CANVAS_WIDTH
@@ -178,385 +184,92 @@ class IntroCutscene:
         else:
             return self.PHASE_BRAWL
 
-    def _clean_sprite(self, sheet, rect):
-        """Extrae un sprite eliminando fondo teal/blanco mediante flood-fill de bordes y defringing limpio."""
-        sub = sheet.subsurface(pygame.Rect(*rect)).copy()
-        w, h = sub.get_size()
-        surf_alpha = pygame.Surface((w, h), pygame.SRCALPHA)
-        
-        # 1. Identificar candidatos a fondo (teal o blanco de borde)
-        bg_candidates = [[False] * w for _ in range(h)]
-        for y in range(h):
-            for x in range(w):
-                r, g, b, _ = sub.get_at((x, y))
-                is_teal = (r <= 45 and 50 <= g <= 140 and 50 <= b <= 140 and abs(g - b) <= 28)
-                is_white = (r >= 220 and g >= 220 and b >= 220)
-                if is_teal or is_white:
-                    bg_candidates[y][x] = True
-
-        # 2. Flood-fill desde todos los bordes exteriores
-        is_bg = [[False] * w for _ in range(h)]
-        queue = []
-        for x in range(w):
-            if bg_candidates[0][x]: queue.append((x, 0))
-            if bg_candidates[h-1][x]: queue.append((x, h-1))
-        for y in range(h):
-            if bg_candidates[y][0]: queue.append((0, y))
-            if bg_candidates[y][w-1]: queue.append((w-1, y))
-
-        while queue:
-            cx, cy = queue.pop(0)
-            if is_bg[cy][cx]:
-                continue
-            is_bg[cy][cx] = True
-            for nx, ny in [(cx+1, cy), (cx-1, cy), (cx, cy+1), (cx, cy-1)]:
-                if 0 <= nx < w and 0 <= ny < h and not is_bg[ny][nx]:
-                    if bg_candidates[ny][nx]:
-                        queue.append((nx, ny))
-
-        # 3. Llenar superficie con transparencia
-        for y in range(h):
-            for x in range(w):
-                if is_bg[y][x]:
-                    surf_alpha.set_at((x, y), (0, 0, 0, 0))
-                else:
-                    r, g, b, _ = sub.get_at((x, y))
-                    surf_alpha.set_at((x, y), (r, g, b, 255))
-
-        # 4. Defringing de bordes exteriores para halos verdes/teal
-        for _ in range(2):
-            to_clear = []
-            for y in range(h):
-                for x in range(w):
-                    if surf_alpha.get_at((x, y))[3] == 255:
-                        is_border = False
-                        for nx, ny in [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]:
-                            if 0 <= nx < w and 0 <= ny < h and surf_alpha.get_at((nx, ny))[3] == 0:
-                                is_border = True
-                                break
-                        if is_border:
-                            r, g, b, _ = sub.get_at((x, y))
-                            if (g > r + 12 and b > r + 12 and r < 150) or (r < 50 and g > 40):
-                                to_clear.append((x, y))
-            for cx, cy in to_clear:
-                surf_alpha.set_at((cx, cy), (0, 0, 0, 0))
-
-        return surf_alpha
-
-    def _clean_crowd_frame(self, sheet, rect):
-        """Extrae un frame de multitud eliminando el cielo superior y cualquier padding teal inferior."""
-        sub = sheet.subsurface(pygame.Rect(*rect)).copy()
-        w, h = sub.get_size()
-        surf_alpha = pygame.Surface((w, h), pygame.SRCALPHA)
-        
-        # 1. Identificar candidatos a fondo (teal)
-        bg_candidates = [[False] * w for _ in range(h)]
-        for y in range(h):
-            for x in range(w):
-                r, g, b, _ = sub.get_at((x, y))
-                is_teal = (r <= 45 and 45 <= g <= 145 and 45 <= b <= 145 and abs(g - b) <= 30)
-                if is_teal:
-                    bg_candidates[y][x] = True
-
-        # 2. Flood-fill desde bordes superior e inferior
-        is_bg = [[False] * w for _ in range(h)]
-        queue = []
-        for x in range(w):
-            for y_edge in range(min(5, h)):
-                if bg_candidates[y_edge][x]:
-                    queue.append((x, y_edge))
-                if bg_candidates[h - 1 - y_edge][x]:
-                    queue.append((x, h - 1 - y_edge))
-        for y in range(h):
-            if bg_candidates[y][0]:
-                queue.append((0, y))
-            if bg_candidates[y][w - 1]:
-                queue.append((w - 1, y))
-
-        while queue:
-            cx, cy = queue.pop(0)
-            if is_bg[cy][cx]:
-                continue
-            is_bg[cy][cx] = True
-            for nx, ny in [(cx+1, cy), (cx-1, cy), (cx, cy+1), (cx, cy-1)]:
-                if 0 <= nx < w and 0 <= ny < h and not is_bg[ny][nx]:
-                    if bg_candidates[ny][nx]:
-                        queue.append((nx, ny))
-
-        for y in range(h):
-            for x in range(w):
-                if is_bg[y][x]:
-                    surf_alpha.set_at((x, y), (0, 0, 0, 0))
-                else:
-                    r, g, b, _ = sub.get_at((x, y))
-                    surf_alpha.set_at((x, y), (r, g, b, 255))
-
-        # 3. Defringing en bordes superior e inferior
-        for _ in range(2):
-            to_clear = []
-            for y in range(h):
-                for x in range(w):
-                    if surf_alpha.get_at((x, y))[3] == 255:
-                        is_border = False
-                        for nx, ny in [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]:
-                            if 0 <= nx < w and 0 <= ny < h and surf_alpha.get_at((nx, ny))[3] == 0:
-                                is_border = True
-                                break
-                        if is_border:
-                            r, g, b, _ = sub.get_at((x, y))
-                            if (g > r + 10 and b > r + 10 and r < 140) or (r < 45 and g > 35):
-                                to_clear.append((x, y))
-            for cx, cy in to_clear:
-                surf_alpha.set_at((cx, cy), (0, 0, 0, 0))
-
-        return surf_alpha
-
-    @staticmethod
-    def _clean_sprite_chroma(surf):
-        """Elimina por completo halos verdes (green chroma spill) y defringe los bordes."""
-        s = surf.copy()
-        w, h = s.get_size()
-        # Pass 1: transparent edge green removal
-        for y in range(h):
-            for x in range(w):
-                r, g, b, a = s.get_at((x, y))
-                if a == 0:
-                    continue
-                is_green = (g > r + 10 and g > b + 10) or (g > 55 and r < 60 and b < 60) or (g > 1.12 * max(r, b) and g > 45)
-                if is_green:
-                    is_edge = False
-                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1), (-1, 1), (1, -1)]:
-                        nx, ny = x + dx, y + dy
-                        if not (0 <= nx < w and 0 <= ny < h) or s.get_at((nx, ny))[3] == 0:
-                            is_edge = True
-                            break
-                    if is_edge:
-                        s.set_at((x, y), (0, 0, 0, 0))
-                    else:
-                        s.set_at((x, y), (r, int((r + b) / 2), b, a))
-
-        # Pass 2: second layer border cleanup and color neutralization
-        for y in range(h):
-            for x in range(w):
-                r, g, b, a = s.get_at((x, y))
-                if a == 0:
-                    continue
-                if (g > r + 6 and g > b + 6) or (g > 1.10 * max(r, b) and g > 40):
-                    is_edge = False
-                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                        nx, ny = x + dx, y + dy
-                        if not (0 <= nx < w and 0 <= ny < h) or s.get_at((nx, ny))[3] == 0:
-                            is_edge = True
-                            break
-                    if is_edge:
-                        s.set_at((x, y), (0, 0, 0, 0))
-                    else:
-                        s.set_at((x, y), (r, int((r + b) / 2), b, a))
-        return s
-
-    def _init_opening_assets(self):
-        """Inicializa los sprites oficiales de la apertura y el título con caché en memoria."""
-        global _CACHED_OPENING_ASSETS
-        if _CACHED_OPENING_ASSETS is not None:
-            self.building_surf = _CACHED_OPENING_ASSETS["building_surf"]
-            self.crowd_frames = _CACHED_OPENING_ASSETS["crowd_frames"]
-            self.op_spark = _CACHED_OPENING_ASSETS["op_spark"]
-            self.op_blonde_idle = _CACHED_OPENING_ASSETS["op_blonde_idle"]
-            self.op_blonde_punch = _CACHED_OPENING_ASSETS["op_blonde_punch"]
-            self.op_brown_stance = _CACHED_OPENING_ASSETS["op_brown_stance"]
-            self.op_fight_hit = _CACHED_OPENING_ASSETS["op_fight_hit"]
-            self.op_brown_fall = _CACHED_OPENING_ASSETS["op_brown_fall"]
-            self.logo_title = _CACHED_OPENING_ASSETS.get("logo_title")
-            self.banner_sc = _CACHED_OPENING_ASSETS.get("banner_sc")
-            self.banner_ed = _CACHED_OPENING_ASSETS.get("banner_ed")
-            self.banner_full = _CACHED_OPENING_ASSETS.get("banner_full")
-            self.credits_surf = _CACHED_OPENING_ASSETS.get("credits_surf")
-            return
-
-        self.building_surf = None
-        self.crowd_frames = []
-        self.logo_title = None
-        self.banner_sc = None
-        self.banner_ed = None
-        self.banner_full = None
-        self.credits_surf = None
-
-        opening_assets_paths = [
-            os.path.join("assets", "backgrounds", "opening assets (1).png"),
-            os.path.join("assets", "backgrounds", "opening assets.PNG"),
-            os.path.join("assets", "backgrounds", "opening assets.png"),
-        ]
-        chosen_opening_asset = None
-        for p in opening_assets_paths:
-            if os.path.exists(p):
-                chosen_opening_asset = p
-                break
-
-        if chosen_opening_asset:
-            try:
-                # Verificar si la imagen ya tiene canal alfa nativo transparente
-                raw_sheet = pygame.image.load(chosen_opening_asset)
-                has_native_alpha = (raw_sheet.get_bytesize() == 4) or bool(raw_sheet.get_flags() & pygame.SRCALPHA)
-                if has_native_alpha:
-                    raw_sheet = raw_sheet.convert_alpha()
-                else:
-                    raw_sheet = raw_sheet.convert()
-
-                # 1. Edificio completo + Cielo + Cartel DAVINCI FIGHTER II + Arbustos de base
-                building_surf = raw_sheet.subsurface(pygame.Rect(731, 0, 473, 852)).copy()
-                
-                # 2. Multitud (3 frames de animación limpios y sólidos sin líneas verdes de borde)
-                if has_native_alpha:
-                    crowd_frames = [
-                        raw_sheet.subsurface(pygame.Rect(731, 863, 473, 136)).copy(),
-                        raw_sheet.subsurface(pygame.Rect(731, 1009, 473, 138)).copy(),
-                        raw_sheet.subsurface(pygame.Rect(731, 1158, 473, 134)).copy(),
-                    ]
-                    for c_frame in crowd_frames:
-                        cw, ch = c_frame.get_size()
-                        for y in range(ch):
-                            for x in range(cw):
-                                r, g, b, a = c_frame.get_at((x, y))
-                                if a > 0 and (y < 4 or y > ch - 4):
-                                    if (g > r + 15 and g > b + 10) or (r < 50 and g > 50):
-                                        c_frame.set_at((x, y), (0, 0, 0, 0))
-                else:
-                    h_crowd = 446
-                    h_sub = int(h_crowd / 3.0)
-                    crowd_frames = [
-                        self._clean_crowd_frame(raw_sheet, (731, int(862 + i * (h_crowd / 3.0)), 473, h_sub - 12))
-                        for i in range(3)
-                    ]
-                
-                # 3. Luchadores y efectos con defringing y eliminación completa de halo verde
-                if has_native_alpha:
-                    op_spark = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(184, 663, 57, 57)))
-                    op_blonde_idle = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(559, 651, 169, 151)))
-                    op_blonde_punch = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(247, 662, 308, 140)))
-                    op_brown_stance = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(560, 1143, 168, 145)))
-                    op_fight_hit = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(157, 1077, 393, 211)))
-                    op_brown_fall = self._clean_sprite_chroma(raw_sheet.subsurface(pygame.Rect(0, 1042, 151, 245)))
-                else:
-                    op_spark = self._clean_sprite(raw_sheet, (184, 663, 57, 57))
-                    op_blonde_idle = self._clean_sprite(raw_sheet, (559, 651, 169, 151))
-                    op_blonde_punch = self._clean_sprite(raw_sheet, (247, 662, 308, 140))
-                    op_brown_stance = self._clean_sprite(raw_sheet, (560, 1143, 168, 145))
-                    op_fight_hit = self._clean_sprite(raw_sheet, (157, 1077, 393, 211))
-                    op_brown_fall = self._clean_sprite(raw_sheet, (0, 1042, 151, 245))
-
-                # 4. Title assets para las fases de Zoom, Achicar/Agrandar y Textos Animados
-                title_logo_path = os.path.join("assets", "title", "logo_davinci_fighters.png")
-                banner_sc_path = os.path.join("assets", "title", "banner_special_champion.png")
-                banner_ed_path = os.path.join("assets", "title", "banner_edition.png")
-                banner_full_path = os.path.join("assets", "title", "banner_full.png")
-                credits_path = os.path.join("assets", "title", "credits_block.png")
-
-                logo_title = pygame.image.load(title_logo_path).convert_alpha() if os.path.exists(title_logo_path) else None
-                banner_sc = pygame.image.load(banner_sc_path).convert_alpha() if os.path.exists(banner_sc_path) else None
-                banner_ed = pygame.image.load(banner_ed_path).convert_alpha() if os.path.exists(banner_ed_path) else None
-                banner_full = pygame.image.load(banner_full_path).convert_alpha() if os.path.exists(banner_full_path) else None
-                credits_surf = pygame.image.load(credits_path).convert_alpha() if os.path.exists(credits_path) else None
-
-                _CACHED_OPENING_ASSETS = {
-                    "building_surf": building_surf,
-                    "crowd_frames": crowd_frames,
-                    "op_spark": op_spark,
-                    "op_blonde_idle": op_blonde_idle,
-                    "op_blonde_punch": op_blonde_punch,
-                    "op_brown_stance": op_brown_stance,
-                    "op_fight_hit": op_fight_hit,
-                    "op_brown_fall": op_brown_fall,
-                    "logo_title": logo_title,
-                    "banner_sc": banner_sc,
-                    "banner_ed": banner_ed,
-                    "banner_full": banner_full,
-                    "credits_surf": credits_surf,
-                }
-                self.building_surf = building_surf
-                self.crowd_frames = crowd_frames
-                self.op_spark = op_spark
-                self.op_blonde_idle = op_blonde_idle
-                self.op_blonde_punch = op_blonde_punch
-                self.op_brown_stance = op_brown_stance
-                self.op_fight_hit = op_fight_hit
-                self.op_brown_fall = op_brown_fall
-                self.logo_title = logo_title
-                self.banner_sc = banner_sc
-                self.banner_ed = banner_ed
-                self.banner_full = banner_full
-                self.credits_surf = credits_surf
-            except Exception as e:
-                print(f"[IntroCutscene] Error cargando opening assets: {e}")
-
     def _init_frame_provider(self):
-        """Inicializa el proveedor de frames respetando la jerarquía cache -> cv2 -> mock."""
-        self._init_opening_assets()
+        """Inicializa una única fuente visual: frames extraídos de ``Pelea.mov``.
 
-        # Default en runtime (sin parámetros explícitos): usar el motor de sprites oficial puro
-        if not self.explicit_cache_dir and not self.explicit_video_path and self.building_surf is not None:
-            self.mode = "assets"
-            self.total_frames = int(48.0 * self.fps)
-            return
+        El proveedor no busca imágenes en otros directorios y no activa el antiguo
+        motor de sprites. Un cache explícito se conserva para las pruebas, pero el
+        cache usado por la aplicación siempre es ``assets/pelea_frames``.
+        """
+        self.frame_files = []
+        self.brawl_fps = 55.51
+        self._frame_load_failed = False
 
-        # 1. Cache de frames pre-extraídos
         if os.path.isdir(self.cache_dir):
-            valid_exts = (".jpg", ".jpeg", ".png")
+            manifest = {}
             manifest_path = os.path.join(self.cache_dir, "manifest.json")
             if os.path.exists(manifest_path):
                 try:
-                    with open(manifest_path, "r") as f:
+                    with open(manifest_path, "r", encoding="utf-8") as f:
                         manifest = json.load(f)
-                    total_m = manifest.get("total_frames", 0)
-                    if total_m > 0:
-                        self.frame_files = [
-                            os.path.join(self.cache_dir, f"frame_{i:04d}.jpg")
-                            for i in range(total_m)
-                        ]
-                        self.total_frames = total_m if self.explicit_cache_dir else int(48.0 * self.fps)
-                        self.mode = "cache"
-                        self._load_current_brawl_frame()
-                        return
-                except Exception:
-                    pass
+                except (OSError, ValueError, TypeError):
+                    manifest = {}
 
-            files = sorted([
-                os.path.join(self.cache_dir, f)
-                for f in os.listdir(self.cache_dir)
-                if f.lower().endswith(valid_exts)
-            ])
-            if files:
-                self.frame_files = files
-                self.total_frames = len(files) if self.explicit_cache_dir else int(48.0 * self.fps)
+            # En el cache de producción la identidad del video es obligatoria.
+            # Esto evita que un manifest de otra animación sea reutilizado por error.
+            source_name = os.path.basename(str(manifest.get("source_video", "")))
+            source_is_valid = (
+                self.explicit_cache_dir
+                or not source_name
+                or source_name == os.path.basename(DEFAULT_FIGHT_VIDEO)
+            )
+            total_m = int(manifest.get("total_frames", 0) or manifest.get("count", 0) or 0)
+            fps_m = float(
+                manifest.get("frame_fps", manifest.get("native_video_fps", manifest.get("fps", 55.51)))
+                or 55.51
+            )
+
+            if source_is_valid and total_m > 0 and self.explicit_cache_dir:
+                # Mantiene el contrato de las pruebas con caches temporales aun
+                # cuando falte un frame intermedio: se conserva el último válido.
+                self.frame_files = [
+                    os.path.join(self.cache_dir, f"frame_{i:04d}.jpg")
+                    for i in range(total_m)
+                ]
+            elif source_is_valid:
+                candidates = sorted(
+                    f for f in os.listdir(self.cache_dir) if FRAME_FILE_RE.fullmatch(f)
+                )
+                expected = [f"frame_{i:04d}.jpg" for i in range(len(candidates))]
+                if candidates == expected and candidates:
+                    self.frame_files = [os.path.join(self.cache_dir, f) for f in candidates]
+
+            if source_is_valid and self.frame_files:
+                self.brawl_fps = max(1.0, fps_m)
+                self.total_frames = (
+                    len(self.frame_files)
+                    if self.explicit_cache_dir
+                    else max(1, int((14.5 + len(self.frame_files) / self.brawl_fps) * self.fps))
+                )
                 self.mode = "cache"
                 self._load_current_brawl_frame()
                 return
 
-        # 2. Video directo (cv2)
-        if self.explicit_video_path:
-            video_candidates = [self.video_path]
-        else:
-            video_candidates = [
-                self.video_path,
-                os.path.join("assets", "Pelea.mov"),
-                os.path.join("assets", "Street Fighters.mov"),
-                os.path.join("assets", "opening video.mov"),
-            ]
-        for vp in video_candidates:
-            if vp and os.path.exists(vp):
-                try:
-                    import cv2
-                    self._cv2_cap = cv2.VideoCapture(vp)
-                    if self._cv2_cap.isOpened():
-                        self.total_frames = 865 if (self.explicit_cache_dir or self.explicit_video_path) else int(48.0 * self.fps)
-                        self.mode = "cv2"
-                        self._load_current_brawl_frame()
-                        return
-                except Exception:
-                    pass
+        # Único fallback permitido: decodificar el mismo Pelea.mov. Nunca se
+        # sustituyen sus frames por Street Fighters.mov, opening video ni PNG/JPG.
+        if self.video_path and os.path.exists(self.video_path):
+            try:
+                import cv2
+                self._cv2_cap = cv2.VideoCapture(self.video_path)
+                if self._cv2_cap.isOpened():
+                    native_fps = self._cv2_cap.get(cv2.CAP_PROP_FPS) or self.brawl_fps
+                    native_count = int(self._cv2_cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                    self.brawl_fps = max(1.0, float(native_fps))
+                    self.total_frames = (
+                        865
+                        if (self.explicit_cache_dir or self.explicit_video_path)
+                        else max(1, int((14.5 + native_count / self.brawl_fps) * self.fps))
+                    )
+                    self.mode = "cv2"
+                    self._load_current_brawl_frame()
+                    return
+            except Exception:
+                self._cv2_cap = None
 
-        # 3. Fallback sintético (mock)
+        # Fallback sin imagen: pantalla negra dentro del viewport. No se dibuja
+        # ningún recurso externo para simular la pelea.
         self.mode = "mock"
-        self.total_frames = 180 if (self.explicit_cache_dir or self.explicit_video_path) else int(48.0 * self.fps)
+        self.total_frames = 180
         self._load_current_brawl_frame()
 
     def _init_audio(self):
@@ -585,27 +298,28 @@ class IntroCutscene:
                     self.audio_sound = None
 
     def _load_current_brawl_frame(self):
-        """Carga el frame actual de la fase brawl."""
-        if self.mode == "assets":
-            return
-
+        """Carga exclusivamente el frame seleccionado del video de la pelea."""
         if self.mode == "cache" and self.frame_files:
             if self.explicit_cache_dir:
                 idx = min(len(self.frame_files) - 1, max(0, self.current_frame_idx))
             else:
                 brawl_t = max(0.0, self.elapsed_time - 14.5)
-                brawl_fps = 54.02 if len(self.frame_files) == 545 else self.fps
-                idx = min(len(self.frame_files) - 1, int(brawl_t * brawl_fps))
+                idx = min(len(self.frame_files) - 1, int(brawl_t * self.brawl_fps))
             frame_path = self.frame_files[idx]
             if os.path.exists(frame_path):
                 try:
                     surf = pygame.image.load(frame_path)
+                    if pygame.display.get_surface():
+                        surf = surf.convert()
                     if surf.get_size() != (self.TARGET_WIDTH, self.TARGET_HEIGHT):
                         surf = pygame.transform.scale(surf, (self.TARGET_WIDTH, self.TARGET_HEIGHT))
                     self.current_surface = surf
+                    self._frame_load_failed = False
                     return
                 except Exception:
-                    pass
+                    self._frame_load_failed = True
+            else:
+                self._frame_load_failed = True
 
         if self.mode == "cv2" and self._cv2_cap is not None and self._cv2_cap.isOpened():
             try:
@@ -619,29 +333,35 @@ class IntroCutscene:
                     self.current_surface = pygame.image.frombuffer(
                         resized.tobytes(), (self.TARGET_WIDTH, self.TARGET_HEIGHT), "BGR"
                     )
+                    self._frame_load_failed = False
                     return
                 else:
                     self._trigger_finish(skipped=False)
                     return
             except Exception:
-                pass
+                self._frame_load_failed = True
 
         surf = pygame.Surface((self.TARGET_WIDTH, self.TARGET_HEIGHT))
-        surf.fill((10, 15, 30))
+        surf.fill((0, 0, 0))
         self.current_surface = surf
 
     def _get_pelea_frame(self, idx):
-        """Retorna el frame de la pelea en alta calidad desde assets/pelea_frames/."""
+        """Retorna un frame del único cache autorizado, sin buscar alternativas."""
         if not hasattr(self, "_pelea_cache"):
             self._pelea_cache = {}
         if idx in self._pelea_cache:
             return self._pelea_cache[idx]
-        fpath = os.path.join("assets", "pelea_frames", f"frame_{idx:04d}.jpg")
-        if os.path.exists(fpath):
+        if not self.frame_files:
+            return None
+        safe_idx = min(len(self.frame_files) - 1, max(0, int(idx)))
+        target_path = self.frame_files[safe_idx]
+        if os.path.exists(target_path):
             try:
-                surf = pygame.image.load(fpath)
+                surf = pygame.image.load(target_path)
                 if pygame.display.get_surface():
                     surf = surf.convert()
+                if surf.get_size() != (self.TARGET_WIDTH, self.TARGET_HEIGHT):
+                    surf = pygame.transform.scale(surf, (self.TARGET_WIDTH, self.TARGET_HEIGHT))
                 self._pelea_cache[idx] = surf
                 return surf
             except Exception:
@@ -817,183 +537,15 @@ class IntroCutscene:
                     target.blit(line_surf, (start_x, y_start))
                 y_start += line_height
 
-        # 4. FASE 4: Brawl, Pan, Zoom, Achicar/Agrandar y Textos Animados (14.5s .. fin)
+        # 4. FASE 4: Brawl, Pan, and Title Cutscene (14.5s .. fin)
         elif current_phase == self.PHASE_BRAWL:
-            if (self.explicit_cache_dir or self.explicit_video_path) and self.current_surface is not None:
-                target.blit(self.current_surface, (self.dest_x, self.dest_y))
-            elif getattr(self, "building_surf", None) is not None:
-                import math
-                t = self.elapsed_time - 14.5
-                target_w = self.TARGET_WIDTH
-                target_h = self.TARGET_HEIGHT
-                
-                # Crear superficie de trabajo para la escena arcade (960x720)
-                scene_surf = pygame.Surface((target_w, target_h))
-                scene_surf.fill((0, 0, 0))
-
-                scale_b = target_w / 473.0
-                total_b_h = int(self.building_surf.get_height() * scale_b)
-                max_cam_y = total_b_h - target_h
-
-                # Subfase A: Video de la pelea en alta calidad (0.0 .. 7.35s)
-                # 408 frames extraídos directamente de Pelea.mov a 55.5 FPS
-                if t < 7.35:
-                    p_idx = min(407, max(0, int(t * 55.51)))
-                    p_surf = self._get_pelea_frame(p_idx)
-                    if p_surf is not None:
-                        scene_surf.blit(p_surf, (0, 0))
-                    else:
-                        cam_y = max_cam_y
-                        scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
-                        scene_surf.blit(scaled_building, (0, -int(cam_y)))
-                        if hasattr(self, "crowd_frames") and self.crowd_frames:
-                            c_frame = self.crowd_frames[int(t * 3.5) % 3]
-                            sc_crowd_h = int(c_frame.get_height() * scale_b)
-                            sc_crowd = pygame.transform.scale(c_frame, (target_w, sc_crowd_h))
-                            scene_surf.blit(sc_crowd, (0, target_h - sc_crowd_h + 8))
-                        sc_f = scale_b * 1.25
-                        sbr = pygame.transform.scale(self.op_brown_stance, (int(self.op_brown_stance.get_width() * sc_f), int(self.op_brown_stance.get_height() * sc_f)))
-                        sb = pygame.transform.scale(self.op_blonde_idle, (int(self.op_blonde_idle.get_width() * sc_f), int(self.op_blonde_idle.get_height() * sc_f)))
-                        scene_surf.blit(sbr, (60, target_h - sbr.get_height() + 8))
-                        scene_surf.blit(sb, (500, target_h - sb.get_height() + 8))
-
-                # Subfase B: Transición fluida en la cima del edificio con cartel de Da Vinci Fighters (7.35 .. 9.2s)
-                elif t < 9.2:
-                    prog = (t - 7.35) / 1.85
-                    ease = prog * prog * (3.0 - 2.0 * prog)
-                    cam_y = int(max_cam_y * 0.22 * (1.0 - ease))
-
-                    scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
-                    scene_surf.blit(scaled_building, (0, -int(cam_y)))
-
-                # Subfase C: Cartel en la cima del rascacielos y Fade to Black suave (9.2 .. 10.8s)
-                elif t < 10.8:
-                    scaled_building = pygame.transform.scale(self.building_surf, (target_w, total_b_h))
-                    scene_surf.blit(scaled_building, (0, 0))
-
-                    if t >= 9.8:
-                        fade_black = min(1.0, (t - 9.8) / 1.0)
-                        dim = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
-                        dim.fill((0, 0, 0, int(255 * fade_black)))
-                        scene_surf.blit(dim, (0, 0))
-
-                # Subfase D: Pantalla en negro con solo el título centrado y parpadeo de INSERT COIN (10.8 .. 12.5s)
-                elif t < 12.5:
-                    scene_surf.fill((0, 0, 0))
-                    if getattr(self, "logo_title", None) is not None:
-                        lw, lh = 720, int(720 * self.logo_title.get_height() / self.logo_title.get_width())
-                        s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
-                        scene_surf.blit(s_logo, (target_w // 2 - lw // 2, 170))
-
-                    if int(t * 4.0) % 2 == 0:
-                        self._draw_arcade_text(scene_surf, "INSERT COIN.", target_w // 2, 540)
-
-                # Subfase E: Pantalla azul marino de Capcom con título centrado (12.5 .. 13.0s)
-                elif t < 13.0:
-                    scene_surf.fill((1, 9, 114))
-                    if getattr(self, "logo_title", None) is not None:
-                        lw, lh = 720, int(720 * self.logo_title.get_height() / self.logo_title.get_width())
-                        s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
-                        scene_surf.blit(s_logo, (target_w // 2 - lw // 2, 170))
-
-                # Subfase F: El logotipo se achica rápidamente hacia el centro (13.0 .. 13.7s)
-                elif t < 13.7:
-                    scene_surf.fill((1, 9, 114))
-                    prog_s = (t - 13.0) / 0.7
-                    sc = max(0.12, 1.0 - 0.88 * (prog_s ** 2))
-                    if getattr(self, "logo_title", None) is not None:
-                        base_h = int(720 * self.logo_title.get_height() / self.logo_title.get_width())
-                        lw, lh = max(1, int(720 * sc)), max(1, int(base_h * sc))
-                        s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
-                        start_y = 170
-                        center_y = target_h // 2 - base_h // 2 - 40
-                        curr_y = int(start_y + (center_y - start_y) * prog_s)
-                        scene_surf.blit(s_logo, (target_w // 2 - lw // 2, curr_y))
-
-                # Subfase G: El logotipo se agranda y sube mientras vuelan los banners (13.7 .. 15.2s)
-                elif t < 15.2:
-                    scene_surf.fill((1, 9, 114))
-
-                    prog_e = (t - 13.7) / 1.5
-                    sc = max(0.15, min(1.0, 0.15 + 0.85 * math.sin(min(1.0, prog_e * 1.5) * math.pi / 2.0)))
-                    if getattr(self, "logo_title", None) is not None:
-                        base_h = int(740 * self.logo_title.get_height() / self.logo_title.get_width())
-                        lw, lh = max(1, int(740 * sc)), max(1, int(base_h * sc))
-                        s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
-                        start_y = target_h // 2 - base_h // 2 - 40
-                        target_y = 65
-                        curr_y = int(start_y + (target_y - start_y) * min(1.0, prog_e * 1.3))
-                        scene_surf.blit(s_logo, (target_w // 2 - lw // 2, curr_y))
-
-                    # Animación auténtica del banner SPECIAL CHAMPION EDITION volando en zig-zag (13.7 .. 15.2s)
-                    if getattr(self, "banner_full", None) is not None:
-                        w_full = 580
-                        h_full = int(w_full * self.banner_full.get_height() / self.banner_full.get_width())
-                        s_bfull = pygame.transform.smoothscale(self.banner_full, (w_full, h_full))
-                        dest_x = target_w // 2 - w_full // 2
-                        y_banner = 310
-                        t_b = t - 13.7
-
-                        if t_b < 0.35:
-                            # Pase 1: Izquierda a Derecha
-                            p = t_b / 0.35
-                            curr_bx = int(-w_full + (target_w + w_full) * p)
-                        elif t_b < 0.70:
-                            # Pase 2: Derecha a Izquierda
-                            p = (t_b - 0.35) / 0.35
-                            curr_bx = int(target_w - (target_w + w_full) * p)
-                        elif t_b < 1.05:
-                            # Pase 3: Izquierda a Derecha
-                            p = (t_b - 0.70) / 0.35
-                            curr_bx = int(-w_full + (target_w + w_full) * p)
-                        else:
-                            # Pase 4: Derecha hacia el Centro y Slam
-                            p = min(1.0, (t_b - 1.05) / 0.45)
-                            ease = 1.0 - math.pow(1.0 - p, 3)
-                            curr_bx = int(target_w + (dest_x - target_w) * ease)
-
-                        scene_surf.blit(s_bfull, (curr_bx, y_banner))
-
-                        # Destello blanco de impacto al encajar (t = 15.10 .. 15.20)
-                        if 15.10 <= t <= 15.20:
-                            flash_surf = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
-                            flash_surf.fill((255, 255, 255, 180))
-                            scene_surf.blit(flash_surf, (0, 0))
-
-                # Subfase H: Pantalla de Título Oficial (exacta al arcade) (t >= 15.2s)
-                else:
-                    scene_surf.fill((1, 9, 114))
-
-                    # 1. Logotipo oficial DAVINCI FIGHTERS II
-                    if getattr(self, "logo_title", None) is not None:
-                        lw, lh = 740, int(740 * self.logo_title.get_height() / self.logo_title.get_width())
-                        s_logo = pygame.transform.smoothscale(self.logo_title, (lw, lh))
-                        logo_x = target_w // 2 - lw // 2
-                        logo_y = 70
-                        scene_surf.blit(s_logo, (logo_x, logo_y))
-
-                    # 2. Banner SPECIAL CHAMPION EDITION encajado
-                    if getattr(self, "banner_full", None) is not None:
-                        w_full = 580
-                        h_full = int(w_full * self.banner_full.get_height() / self.banner_full.get_width())
-                        s_bfull = pygame.transform.smoothscale(self.banner_full, (w_full, h_full))
-                        scene_surf.blit(s_bfull, (target_w // 2 - w_full // 2, 310))
-
-                    # 3. INSERT COIN parpadeante (titilando cada 0.4s)
-                    if int(t * 4.0) % 2 == 0:
-                        self._draw_arcade_text(scene_surf, "INSERT COIN.", target_w // 2, 440)
-
-                    # 4. Textos limpios de copyright oficiales
-                    self._draw_arcade_text(scene_surf, "© CAPCOM 2025, 92, 93", target_w // 2, 540, small=True)
-                    self._draw_arcade_text(scene_surf, "LICENCED BY CAMILA IANNI", target_w // 2, 580, small=True)
-
-                # Renderizar escena centrada con pillarboxes
-                target.blit(scene_surf, (self.dest_x, self.dest_y))
-            elif self.current_surface is not None:
+            if self.current_surface is not None:
                 target.blit(self.current_surface, (self.dest_x, self.dest_y))
             else:
+                # No se permite inventar una escena con sprites o fondos si un
+                # frame del video no está disponible.
                 rect = pygame.Rect(self.dest_x, self.dest_y, self.TARGET_WIDTH, self.TARGET_HEIGHT)
-                pygame.draw.rect(target, (2, 20, 120), rect)
+                pygame.draw.rect(target, (0, 0, 0), rect)
 
         # Pillarboxes arcade de 160px a los lados (formato 4:3 en canvas 1280x720)
         pygame.draw.rect(target, (0, 0, 0), (0, 0, self.PILLARBOX_WIDTH, self.CANVAS_HEIGHT))

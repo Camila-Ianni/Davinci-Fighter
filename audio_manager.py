@@ -50,6 +50,60 @@ class AudioManager:
             "sellanes": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
         }
 
+        # Mapeo exhaustivo de canciones oficiales de fondos de pelea (SEGA Genesis / Arcade)
+        self.stage_music_mapping = {
+            # Blanka Stage (Brasil - Río Amazonas)
+            "blanka": "(SEGA) Street Fighter II SCE Music - Blanka Stage.mp3",
+            "gamaliel": "(SEGA) Street Fighter II SCE Music - Blanka Stage.mp3",
+            "brazil": "(SEGA) Street Fighter II SCE Music - Blanka Stage.mp3",
+            "amazon": "(SEGA) Street Fighter II SCE Music - Blanka Stage.mp3",
+
+            # Guile Stage (USA - Base Aérea / Hangar militar)
+            "guile": "(SEGA) Street Fighter II SCE Music - Guile Stage.mp3",
+            "cavasso": "(SEGA) Street Fighter II SCE Music - Guile Stage.mp3",
+            "airbase": "(SEGA) Street Fighter II SCE Music - Guile Stage.mp3",
+            "hangar": "(SEGA) Street Fighter II SCE Music - Guile Stage.mp3",
+            "usa_low": "(SEGA) Street Fighter II SCE Music - Guile Stage.mp3",
+            "usa_guile": "(SEGA) Street Fighter II SCE Music - Guile Stage.mp3",
+
+            # M. Bison Stage (Final Boss / URSS Fábrica / Sellanes)
+            "bison": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "m_bison": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "m bison": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "mbison": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "sellanes": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "ussr": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "urss": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "russia": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+            "zangief": "(SEGA) Street Fighter II SCE Music - M Bison Stage.mp3",
+
+            # Ryu Stage (Japón - Castillo Suzaku / Ken Muelle)
+            "ryu": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "carloni": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "japan": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "suzaku": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "ken": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "usa": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "usa_up": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "usa_ken": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "harbor": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "port": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "china": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+            "chunli": "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3",
+
+            # Sagat Stage (Tailandia - Templo Ayutthaya / Romero / E. Honda Baño Público / India Dhalsim)
+            "sagat": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "romero": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "thailand": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "honda": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "ehonda": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "japan_up": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "bathhouse": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "sento": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "india": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+            "dhalsim": "(SEGA) Street Fighter II SCE Music - Sagat Stage.mp3",
+        }
+
         # Lista de fallback para pistas de combate genéricas
         self.fight_tracks = list(self.character_stage_tracks.values())
 
@@ -154,6 +208,46 @@ class AudioManager:
             crash = 0.40 * noise * np.exp(-24 * t_i) + 0.15 * noise * np.exp(-9 * t_i)
             self.sfx_cache["vs_impact"] = to_sound(thump + crash)
 
+            # 5. coin / insert coin: Sonido de inserción de crédito desde assets/audio/Sounds/insert coin.mp3
+            snd_coin = None
+            coin_path = os.path.join(self.audio_dir, "Sounds", "insert coin.mp3")
+            if os.path.exists(coin_path):
+                try:
+                    snd_coin = pygame.mixer.Sound(coin_path)
+                    snd_coin.set_volume(self.sfx_volume)
+                except Exception as e:
+                    print(f"[AudioManager] Fallback en carga de insert coin.mp3: {e}")
+
+            if snd_coin is None:
+                # Fallback procedimental clásico de doble campana arcade (987 Hz -> 1318 Hz)
+                dur_cn = 0.180
+                n_cn_half = int(sample_rate * (dur_cn / 2))
+                t_cn1 = np.linspace(0, dur_cn / 2, n_cn_half, False)
+                t_cn2 = np.linspace(0, dur_cn / 2, n_cn_half, False)
+                decay_cn = np.exp(-16 * t_cn1)
+                w_coin1 = (0.50 * np.sin(2 * np.pi * 987.77 * t_cn1) + 0.25 * np.sin(2 * np.pi * 1975.53 * t_cn1)) * decay_cn
+                w_coin2 = (0.60 * np.sin(2 * np.pi * 1318.51 * t_cn2) + 0.30 * np.sin(2 * np.pi * 2637.02 * t_cn2)) * decay_cn
+                snd_coin = to_sound(np.concatenate((w_coin1, w_coin2)))
+
+            self.sfx_cache["coin"] = snd_coin
+            self.sfx_cache["credit"] = snd_coin
+            self.sfx_cache["insert coin"] = snd_coin
+
+            # 6. crate_break / wood_smash: Fractura contundente de madera (crunch de ruido + golpe sordo 140->50 Hz + astillas)
+            dur_crk = 0.280
+            n_crk = int(sample_rate * dur_crk)
+            t_crk = np.linspace(0, dur_crk, n_crk, False)
+            noise_crk = np.random.uniform(-1, 1, n_crk)
+            decay_n = np.exp(-26 * t_crk)
+            freq_crk = 140.0 * np.exp(-14 * t_crk) + 50.0
+            thud_crk = np.sin(2 * np.pi * freq_crk * t_crk) * np.exp(-16 * t_crk)
+            click_crk = np.sin(2 * np.pi * 1200 * t_crk) * np.exp(-70 * t_crk)
+            w_crate = 0.45 * noise_crk * decay_n + 0.45 * thud_crk + 0.20 * click_crk
+            snd_crate = to_sound(w_crate * 0.9)
+            self.sfx_cache["crate_break"] = snd_crate
+            self.sfx_cache["wood_smash"] = snd_crate
+            self.sfx_cache["insert_coin"] = snd_coin
+
         except Exception as e:
             print(f"[AudioManager] Error generando SFX procedimentales: {e}")
 
@@ -206,10 +300,12 @@ class AudioManager:
         except Exception as e:
             print(f"[AudioManager] Error reproduciendo {file_path}: {e}")
 
-    def play_stage_music(self, char_name, loop=True, fade_ms=500):
-        """Reproduce la pista arcade CPS1 del escenario del personaje seleccionado."""
-        target_char = char_name if char_name in self.character_stage_tracks else "carloni"
-        file_name = self.character_stage_tracks[target_char]
+    def play_stage_music(self, char_or_stage, loop=True, fade_ms=500):
+        """Reproduce la pista arcade oficial del escenario según personaje o ID de escenario."""
+        key = str(char_or_stage).lower() if char_or_stage else "carloni"
+        file_name = self.stage_music_mapping.get(key)
+        if not file_name:
+            file_name = self.character_stage_tracks.get(key, "(SEGA) Street Fighter II SCE Music - Ryu Stage.mp3")
         self.play_music(file_name, loop=loop, fade_ms=fade_ms)
 
     def stop_music(self, fade_ms=0):
@@ -232,16 +328,25 @@ class AudioManager:
 
         sound = self.sfx_cache.get(sfx_name)
         if not sound:
-            for ext in [".wav", ".mp3"]:
-                p = os.path.join(self.audio_dir, sfx_name + ext)
-                if os.path.exists(p):
-                    try:
-                        sound = pygame.mixer.Sound(p)
-                        sound.set_volume(self.sfx_volume)
-                        self.sfx_cache[sfx_name] = sound
-                        break
-                    except Exception:
-                        pass
+            candidates = [
+                os.path.join(self.audio_dir, sfx_name),
+                os.path.join(self.audio_dir, "Sounds", sfx_name),
+                os.path.join(self.audio_dir, "Sounds", sfx_name.replace("_", " ")),
+                os.path.join(self.audio_dir, "Sounds", sfx_name.replace(" ", "_")),
+            ]
+            for c in candidates:
+                for ext in ["", ".mp3", ".wav"]:
+                    p = c + ext
+                    if os.path.isfile(p):
+                        try:
+                            sound = pygame.mixer.Sound(p)
+                            sound.set_volume(self.sfx_volume)
+                            self.sfx_cache[sfx_name] = sound
+                            break
+                        except Exception:
+                            pass
+                if sound:
+                    break
 
         if sound:
             try:

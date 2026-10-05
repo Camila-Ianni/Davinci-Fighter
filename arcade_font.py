@@ -34,7 +34,10 @@ class ArcadeFont:
 
         if os.path.exists(sheet_path) and os.path.exists(meta_path):
             try:
-                self.sheet = pygame.image.load(sheet_path).convert_alpha()
+                try:
+                    self.sheet = pygame.image.load(sheet_path).convert_alpha()
+                except Exception:
+                    self.sheet = pygame.image.load(sheet_path)
                 with open(meta_path, "r") as f:
                     self.char_meta = json.load(f)
 

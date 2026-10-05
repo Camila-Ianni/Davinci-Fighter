@@ -23,13 +23,29 @@ Soporta salto inmediato (skip) en cualquier momento con ESPACIO, ENTER, ESCAPE o
 import os
 import json
 import re
+import time
+import threading
 import pygame
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_WHITE, COLOR_YELLOW, COLOR_RED, FPS
 from sprite_font import get_boot_font, get_warning_font
 
-DEFAULT_FIGHT_FRAME_DIR = os.path.join("assets", "pelea_frames")
+DEFAULT_FIGHT_FRAME_CANDIDATES = [
+    "30 fotogramas",
+    "30 Fotogramas",
+    os.path.join("assets", "30 fotogramas"),
+    os.path.join("assets", "30 Fotogramas"),
+    os.path.join("assets", "pelea_frames"),
+]
+
+def _resolve_default_fight_dir():
+    for path in DEFAULT_FIGHT_FRAME_CANDIDATES:
+        if os.path.isdir(path):
+            return path
+    return "30 fotogramas"
+
+DEFAULT_FIGHT_FRAME_DIR = _resolve_default_fight_dir()
 DEFAULT_FIGHT_VIDEO = os.path.join("assets", "Pelea.mov")
-FRAME_FILE_RE = re.compile(r"^frame_\d{4}\.(?:jpg|jpeg|png)$", re.IGNORECASE)
+FRAME_FILE_RE = re.compile(r"^frame_\d+\.(?:jpg|jpeg|png)$", re.IGNORECASE)
 
 
 class IntroCutscene:
@@ -159,6 +175,10 @@ class IntroCutscene:
         self._cv2_cap = None
         self._cv2_start_frame = 892
 
+        self.fight_fps = 30.0
+        self.title_fps = 30.0
+        self.FIGHT_END_IDX = 246
+
         self.mode = "mock"
         self._init_frame_provider()
         self._init_audio()
@@ -185,15 +205,11 @@ class IntroCutscene:
             return self.PHASE_BRAWL
 
     def _init_frame_provider(self):
-        """Inicializa una única fuente visual: frames extraídos de ``Pelea.mov``.
-
-        El proveedor no busca imágenes en otros directorios y no activa el antiguo
-        motor de sprites. Un cache explícito se conserva para las pruebas, pero el
-        cache usado por la aplicación siempre es ``assets/pelea_frames``.
-        """
+        """Inicializa la fuente visual autorizada: los frames de la pelea en frente al edificio (carpeta 30 fotogramas)."""
         self.frame_files = []
-        self.brawl_fps = 55.51
+        self.brawl_fps = 30.0
         self._frame_load_failed = False
+        self._frame_cache = {}
 
         if os.path.isdir(self.cache_dir):
             manifest = {}
@@ -205,48 +221,45 @@ class IntroCutscene:
                 except (OSError, ValueError, TypeError):
                     manifest = {}
 
-            # En el cache de producción la identidad del video es obligatoria.
-            # Esto evita que un manifest de otra animación sea reutilizado por error.
-            source_name = os.path.basename(str(manifest.get("source_video", "")))
-            source_is_valid = (
-                self.explicit_cache_dir
-                or not source_name
-                or source_name == os.path.basename(DEFAULT_FIGHT_VIDEO)
+            fps_m = float(
+                manifest.get("frame_fps", manifest.get("native_video_fps", manifest.get("fps", 30.0)))
+                or 30.0
             )
             total_m = int(manifest.get("total_frames", 0) or manifest.get("count", 0) or 0)
-            fps_m = float(
-                manifest.get("frame_fps", manifest.get("native_video_fps", manifest.get("fps", 55.51)))
-                or 55.51
-            )
 
-            if source_is_valid and total_m > 0 and self.explicit_cache_dir:
-                # Mantiene el contrato de las pruebas con caches temporales aun
-                # cuando falte un frame intermedio: se conserva el último válido.
+            if self.explicit_cache_dir and total_m > 0:
                 self.frame_files = [
                     os.path.join(self.cache_dir, f"frame_{i:04d}.jpg")
                     for i in range(total_m)
                 ]
-            elif source_is_valid:
-                candidates = sorted(
-                    f for f in os.listdir(self.cache_dir) if FRAME_FILE_RE.fullmatch(f)
-                )
-                expected = [f"frame_{i:04d}.jpg" for i in range(len(candidates))]
-                if candidates == expected and candidates:
+            else:
+                candidates = [f for f in os.listdir(self.cache_dir) if FRAME_FILE_RE.fullmatch(f)]
+                if candidates:
+                    candidates.sort(key=lambda x: int(re.search(r'\d+', x).group()))
                     self.frame_files = [os.path.join(self.cache_dir, f) for f in candidates]
 
-            if source_is_valid and self.frame_files:
+            if self.frame_files:
                 self.brawl_fps = max(1.0, fps_m)
+                fight_count = min(self.FIGHT_END_IDX, len(self.frame_files))
+                post_count = max(0, len(self.frame_files) - fight_count)
+                fight_duration = fight_count / self.fight_fps
+                post_duration = post_count / self.title_fps
+                frames_duration = fight_duration + post_duration
+
+                # Duración total de al menos 20.4 segundos (con hold en el title screen final para no cortar la canción)
+                total_brawl_duration = max(20.4, frames_duration) if len(self.frame_files) >= 400 else frames_duration
+
                 self.total_frames = (
                     len(self.frame_files)
                     if self.explicit_cache_dir
-                    else max(1, int((14.5 + len(self.frame_files) / self.brawl_fps) * self.fps))
+                    else max(1, int((14.5 + total_brawl_duration) * self.fps))
                 )
                 self.mode = "cache"
                 self._load_current_brawl_frame()
+                self._start_preload()
                 return
 
-        # Único fallback permitido: decodificar el mismo Pelea.mov. Nunca se
-        # sustituyen sus frames por Street Fighters.mov, opening video ni PNG/JPG.
+        # Fallback cv2 si existe video
         if self.video_path and os.path.exists(self.video_path):
             try:
                 import cv2
@@ -266,11 +279,38 @@ class IntroCutscene:
             except Exception:
                 self._cv2_cap = None
 
-        # Fallback sin imagen: pantalla negra dentro del viewport. No se dibuja
-        # ningún recurso externo para simular la pelea.
         self.mode = "mock"
         self.total_frames = 180
         self._load_current_brawl_frame()
+
+    def _start_preload(self):
+        """Inicia un hilo en segundo plano para precargar los frames en RAM a 960x720 sin bloquear la ejecución."""
+        if not self.frame_files or getattr(self, "_preload_started", False):
+            return
+        self._preload_started = True
+
+        def _worker():
+            for i, frame_path in enumerate(self.frame_files):
+                if self.finished or not hasattr(self, "_frame_cache"):
+                    break
+                if i not in self._frame_cache and os.path.exists(frame_path):
+                    try:
+                        surf = pygame.image.load(frame_path)
+                        if pygame.display.get_surface():
+                            surf = surf.convert()
+                        w, h = surf.get_size()
+                        if w > h * 1.4:
+                            rect = pygame.Rect(int(w * 0.125), int(h * 0.052), int(w * 0.75), int(h * 0.896))
+                            surf = surf.subsurface(rect)
+                        if surf.get_size() != (self.TARGET_WIDTH, self.TARGET_HEIGHT):
+                            surf = pygame.transform.scale(surf, (self.TARGET_WIDTH, self.TARGET_HEIGHT))
+                        self._frame_cache[i] = surf
+                    except Exception:
+                        pass
+                time.sleep(0.002)
+
+        t = threading.Thread(target=_worker, daemon=True, name="IntroFramePreloader")
+        t.start()
 
     def _init_audio(self):
         """Inicializa la pista de audio del opening."""
@@ -298,21 +338,48 @@ class IntroCutscene:
                     self.audio_sound = None
 
     def _load_current_brawl_frame(self):
-        """Carga exclusivamente el frame seleccionado del video de la pelea."""
+        """Carga exclusivamente el frame seleccionado de la animación de la pelea."""
         if self.mode == "cache" and self.frame_files:
             if self.explicit_cache_dir:
                 idx = min(len(self.frame_files) - 1, max(0, self.current_frame_idx))
             else:
                 brawl_t = max(0.0, self.elapsed_time - 14.5)
-                idx = min(len(self.frame_files) - 1, int(brawl_t * self.brawl_fps))
+                fight_count = min(getattr(self, "FIGHT_END_IDX", 246), len(self.frame_files))
+                fight_fps = getattr(self, "fight_fps", 30.0)
+                title_fps = getattr(self, "title_fps", 30.0)
+                fight_duration = fight_count / fight_fps
+
+                if brawl_t < fight_duration:
+                    idx = int(brawl_t * fight_fps)
+                else:
+                    post_t = brawl_t - fight_duration
+                    idx = fight_count + int(post_t * title_fps)
+
+                idx = min(len(self.frame_files) - 1, max(0, idx))
+
+            if not hasattr(self, "_frame_cache"):
+                self._frame_cache = {}
+
+            if idx in self._frame_cache:
+                self.current_surface = self._frame_cache[idx]
+                self._frame_load_failed = False
+                return
+
             frame_path = self.frame_files[idx]
             if os.path.exists(frame_path):
                 try:
                     surf = pygame.image.load(frame_path)
                     if pygame.display.get_surface():
                         surf = surf.convert()
+                    w, h = surf.get_size()
+                    if w > h * 1.4:
+                        # Zoom al área activa 4:3 eliminando bordes marrones superior/inferior y barras negras laterales
+                        rect = pygame.Rect(int(w * 0.125), int(h * 0.052), int(w * 0.75), int(h * 0.896))
+                        surf = surf.subsurface(rect)
                     if surf.get_size() != (self.TARGET_WIDTH, self.TARGET_HEIGHT):
                         surf = pygame.transform.scale(surf, (self.TARGET_WIDTH, self.TARGET_HEIGHT))
+
+                    self._frame_cache[idx] = surf
                     self.current_surface = surf
                     self._frame_load_failed = False
                     return
@@ -326,7 +393,11 @@ class IntroCutscene:
                 import cv2
                 ret, frame = self._cv2_cap.read()
                 if ret:
-                    crop = frame[100:2060, 400:3050] if frame.shape[0] > 1000 else frame
+                    h, w = frame.shape[:2]
+                    if w > h * 1.4:
+                        crop = frame[int(h * 0.052):int(h * (0.052 + 0.896)), int(w * 0.125):int(w * (0.125 + 0.75))]
+                    else:
+                        crop = frame[100:2060, 400:3050] if frame.shape[0] > 1000 else frame
                     resized = cv2.resize(
                         crop, (self.TARGET_WIDTH, self.TARGET_HEIGHT), interpolation=cv2.INTER_LINEAR
                     )
@@ -360,6 +431,10 @@ class IntroCutscene:
                 surf = pygame.image.load(target_path)
                 if pygame.display.get_surface():
                     surf = surf.convert()
+                w, h = surf.get_size()
+                if w > h * 1.4:
+                    rect = pygame.Rect(int(w * 0.125), int(h * 0.052), int(w * 0.75), int(h * 0.896))
+                    surf = surf.subsurface(rect)
                 if surf.get_size() != (self.TARGET_WIDTH, self.TARGET_HEIGHT):
                     surf = pygame.transform.scale(surf, (self.TARGET_WIDTH, self.TARGET_HEIGHT))
                 self._pelea_cache[idx] = surf
@@ -581,6 +656,8 @@ class IntroCutscene:
                 except Exception:
                     pass
                 self._cv2_cap = None
+            if hasattr(self, "_frame_cache"):
+                self._frame_cache.clear()
             if self.on_finish is not None and callable(self.on_finish):
                 self.on_finish()
         return "finish"

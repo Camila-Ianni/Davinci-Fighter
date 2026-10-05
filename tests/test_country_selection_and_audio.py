@@ -73,18 +73,33 @@ class TestCountrySelectionAndAudio(HeadlessTestCase):
         self.assertTrue(True)
 
     def test_05_grid_slots_map_all_8_countries(self):
-        """Verifica que las 8 casillas de la cuadrícula correspondan a los 8 países."""
+        """Verifica que las 8 casillas de la cuadrícula correspondan a los 8 países originales de SF2."""
         cs = CharacterSelect(self.screen, MODE_PVAI)
         grid_countries = [slot["country"] for slot in GRID_SLOTS]
         self.assertEqual(len(grid_countries), 8)
-        self.assertIn("japan", grid_countries)
-        self.assertIn("usa", grid_countries)
-        self.assertIn("thailand", grid_countries)
-        self.assertIn("brazil", grid_countries)
-        self.assertIn("spain", grid_countries)
-        self.assertIn("china", grid_countries)
-        self.assertIn("ussr", grid_countries)
-        self.assertIn("india", grid_countries)
+        self.assertEqual(grid_countries.count("japan"), 2)
+        self.assertEqual(grid_countries.count("usa"), 2)
+        self.assertEqual(grid_countries.count("brazil"), 1)
+        self.assertEqual(grid_countries.count("china"), 1)
+        self.assertEqual(grid_countries.count("ussr"), 1)
+        self.assertEqual(grid_countries.count("india"), 1)
+
+    def test_06_map_png_flags_and_grid_icons(self):
+        """Verifica que MAP.png se cargue con los 8 países auténticos y las casillas de cuadrícula."""
+        map_path = os.path.join("assets", "backgrounds", "MAP.png")
+        self.assertTrue(os.path.exists(map_path), "MAP.png debe existir en assets/backgrounds/")
+
+        cs = CharacterSelect(self.screen, MODE_PVAI)
+        authentic_flags = ["ussr", "china", "japan", "japan_up", "usa", "usa_low", "india", "brazil"]
+        for f in authentic_flags:
+            self.assertIn(f, cs.color_flags, f"Bandera {f} no encontrada en color_flags")
+            self.assertIn(f, cs.scaled_flag_rects, f"Rectángulo {f} no encontrado en scaled_flag_rects")
+
+        # Verificar que grid_icons tenga iconos cargados para las casillas
+        self.assertGreaterEqual(len(cs.grid_icons), 5)
+
+        # Renderizar la pantalla completa
+        cs.draw(self.screen)
 
 
 if __name__ == "__main__":

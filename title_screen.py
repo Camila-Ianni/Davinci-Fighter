@@ -23,6 +23,8 @@ from settings import (
     COLOR_YELLOW,
     COLOR_WHITE,
     FPS,
+    MODE_PVAI,
+    MODE_PVP,
 )
 from audio_manager import audio_manager
 
@@ -62,6 +64,10 @@ class TitleScreen:
         self.time = 0.0
         self.blink_timer = 0
         self._updated_this_frame = False
+
+        # Sistema de créditos arcade
+        self.credits_p1 = 0
+        self.credits_p2 = 0
 
         # Configuración visual del prompt
         self.prompt_y = 580
@@ -144,9 +150,23 @@ class TitleScreen:
                 self.logo_mask = None
 
     def handle_input(self, event):
-        """Al presionar cualquier tecla o click, emite SFX y retorna 'continue'."""
-        if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-            audio_manager.play_sfx("menu_confirm")
+        """Maneja la inserción de créditos y arranque de partida estilo arcade (1 para P1, 2 para P2)."""
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_1, pygame.K_KP1):
+                self.credits_p1 += 1
+                self.selected_mode = MODE_PVAI
+                audio_manager.play_sfx("coin")
+                return "start"
+            elif event.key in (pygame.K_2, pygame.K_KP2):
+                self.credits_p2 += 1
+                self.selected_mode = MODE_PVP
+                audio_manager.play_sfx("coin")
+                return "start"
+            elif event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE):
+                audio_manager.play_sfx("select")
+                return "continue"
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            audio_manager.play_sfx("select")
             return "continue"
         return None
 
@@ -212,26 +232,39 @@ class TitleScreen:
             target.blit(self.logo_scaled, (self.logo_render_rect.x, self.logo_render_rect.y))
             self._render_sheen(target)
 
-        # 3. INSERT COIN parpadeante (titilando ON / OFF)
+        # 3. INSERT COIN parpadeante y guía de teclas 1 / 2
+        total_credits = self.credits_p1 + self.credits_p2
         if (self.blink_timer // 25) % 2 == 0:
             if self.arcade_font:
                 txt_coin = self.arcade_font.render("INSERT COIN.", True, (255, 255, 255))
-                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 480))
+                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 470))
             else:
                 txt_coin = self.font.render("INSERT COIN.", True, COLOR_YELLOW)
-                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 480))
+                target.blit(txt_coin, (SCREEN_WIDTH // 2 - txt_coin.get_width() // 2, 470))
+
+        # Guía de controles arcade para créditos
+        prompt_text = "PRESS 1 FOR 1 PLAYER  |  PRESS 2 FOR 2 PLAYERS"
+        if self.arcade_font_sm:
+            txt_prompt = self.arcade_font_sm.render(prompt_text, True, (240, 200, 40))
+        else:
+            txt_prompt = self.font.render(prompt_text, True, COLOR_YELLOW)
+        target.blit(txt_prompt, (SCREEN_WIDTH // 2 - txt_prompt.get_width() // 2, 515))
 
         # 4. Créditos y copyright limpios y oficiales
         if self.arcade_font_sm:
             txt_c1 = self.arcade_font_sm.render("© CAPCOM 2025, 92, 93", True, (255, 255, 255))
             txt_c2 = self.arcade_font_sm.render("LICENCED BY CAMILA IANNI", True, (255, 255, 255))
-            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 560))
-            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 600))
+            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 565))
+            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 605))
+            txt_cr = self.arcade_font_sm.render(f"CREDIT  {total_credits:02d}", True, (255, 255, 255))
+            target.blit(txt_cr, (SCREEN_WIDTH - 300, 660))
         else:
             txt_c1 = self.font.render("© CAPCOM 2025, 92, 93", True, (240, 70, 20))
             txt_c2 = self.font.render("LICENCED BY CAMILA IANNI", True, (240, 70, 20))
-            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 560))
-            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 600))
+            target.blit(txt_c1, (SCREEN_WIDTH // 2 - txt_c1.get_width() // 2, 565))
+            target.blit(txt_c2, (SCREEN_WIDTH // 2 - txt_c2.get_width() // 2, 605))
+            txt_cr = self.font.render(f"CREDIT  {total_credits:02d}", True, COLOR_WHITE)
+            target.blit(txt_cr, (SCREEN_WIDTH - 300, 660))
 
         # Pillarboxes laterales arcade de 160px para relación de aspecto 4:3
         pygame.draw.rect(target, (0, 0, 0), (0, 0, 160, SCREEN_HEIGHT))

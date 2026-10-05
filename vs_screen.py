@@ -21,6 +21,9 @@ from settings import (
     COLOR_BG,
     COLOR_GREEN,
     FPS,
+    ARCADE_WIDTH,
+    ARCADE_HEIGHT,
+    PILLARBOX_OFFSET_X,
 )
 from character_data import get_character_data
 from character_select import CHARACTER_LOCATIONS
@@ -71,13 +74,18 @@ class VSScreen:
         # Superficie de avión en sprite
         self.plane_surf = self._create_plane_surface()
 
-        # Cargar fondo de mapa mundial
+        # Cargar fondo de mapa mundial centrado en formato arcade 4:3 con laterales negros
         self.bg_image = None
-        bg_path = os.path.join("assets", "backgrounds", "player select.png")
+        bg_path = os.path.join("assets", "backgrounds", "MAP.png")
+        if not os.path.exists(bg_path):
+            bg_path = os.path.join("assets", "backgrounds", "player select.png")
         if os.path.exists(bg_path):
             try:
                 raw_bg = pygame.image.load(bg_path)
-                self.bg_image = pygame.transform.scale(raw_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
+                scaled_43 = pygame.transform.scale(raw_bg, (ARCADE_WIDTH, ARCADE_HEIGHT))
+                self.bg_image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+                self.bg_image.fill((0, 0, 0))
+                self.bg_image.blit(scaled_43, (PILLARBOX_OFFSET_X, 0))
             except Exception as e:
                 print(f"[VSScreen] Error cargando fondo: {e}")
 
@@ -248,14 +256,19 @@ class VSScreen:
             flash_surf.fill((255, 255, 255, alpha))
             render_surf.blit(flash_surf, (0, 0))
 
+        # 8. Asegurar franjas negras laterales arcade 4:3 (Pillarbox)
+        if PILLARBOX_OFFSET_X > 0:
+            pygame.draw.rect(render_surf, (0, 0, 0), (0, 0, PILLARBOX_OFFSET_X, SCREEN_HEIGHT))
+            pygame.draw.rect(render_surf, (0, 0, 0), (PILLARBOX_OFFSET_X + ARCADE_WIDTH, 0, PILLARBOX_OFFSET_X, SCREEN_HEIGHT))
+
         # Blit final a la pantalla con temblor si aplica
         target.blit(render_surf, self.shake_offset)
 
     def _draw_fighter_vs_card(self, screen, data, loc, is_p1=True):
-        """Dibuja la tarjeta del profesor a la izquierda o derecha."""
-        card_w = 280
+        """Dibuja la tarjeta del profesor a la izquierda o derecha dentro del formato arcade 4:3."""
+        card_w = 260
         card_h = 380
-        x = 50 if is_p1 else (SCREEN_WIDTH - card_w - 50)
+        x = PILLARBOX_OFFSET_X + 25 if is_p1 else (PILLARBOX_OFFSET_X + ARCADE_WIDTH - card_w - 25)
         y = 160
 
         card_rect = pygame.Rect(x, y, card_w, card_h)

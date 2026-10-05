@@ -76,6 +76,23 @@ class TestCharacterSelectSmoke(HeadlessTestCase):
         except Exception as e:
             self.fail(f"CharacterSelect.draw() falló con excepción: {e}")
 
+    def test_04b_empty_portraits_and_direct_stage_launch(self):
+        """Verifica que no se dibujen fotos de personajes y que la confirmación devuelva stage_id directamente."""
+        cs = CharacterSelect(self.screen, MODE_PVAI)
+        # Seleccionar casilla 3 (Brasil / Blanka)
+        cs.p1_slot_idx = 3
+        res = cs.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+        self.assertIsNotNone(res)
+        self.assertEqual(res.get("stage_id"), "brazil")
+        self.assertEqual(res.get("action"), "fight")
+
+        # Seleccionar casilla 5 (China / Chun-Li)
+        cs2 = CharacterSelect(self.screen, MODE_PVAI)
+        cs2.p1_slot_idx = 5
+        res2 = cs2.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))
+        self.assertIsNotNone(res2)
+        self.assertEqual(res2.get("stage_id"), "china")
+
 
 class TestVSScreenSmoke(HeadlessTestCase):
     """Pruebas unitarias para VSScreen."""

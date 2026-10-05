@@ -8,6 +8,11 @@ SCREEN_HEIGHT = 720
 FPS = 60
 TITLE = "Da Vinci Fighters"
 
+# Formato Arcade Clásico 4:3 con laterales negros (Pillarbox)
+ARCADE_WIDTH = 960       # 720 * (4 / 3) = 960 px (proporción arcade cuadrada tradicional)
+ARCADE_HEIGHT = 720
+PILLARBOX_OFFSET_X = (SCREEN_WIDTH - ARCADE_WIDTH) // 2  # 160 px de margen negro a cada lado
+
 # Física y Escenario
 GROUND_Y = 600          # Coordenada Y del suelo
 GRAVITY = 0.8           # Fuerza de gravedad

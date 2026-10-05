@@ -46,6 +46,7 @@ def main():
     game_instance = None
     p1_char = "carloni"
     p2_char = "cavasso"
+    selected_stage_id = None
 
     running = True
     while running:
@@ -64,8 +65,10 @@ def main():
             elif app_state == AppState.TITLE_SCREEN:
                 res = title_screen.handle_input(event)
                 if res in ("continue", "start"):
-                    selected_mode = "1p"
-                    char_select = CharacterSelect(screen, selected_mode)
+                    selected_mode = getattr(title_screen, "selected_mode", "1p")
+                    credits_p1 = getattr(title_screen, "credits_p1", 1)
+                    credits_p2 = getattr(title_screen, "credits_p2", 0)
+                    char_select = CharacterSelect(screen, selected_mode, credits_p1=credits_p1, credits_p2=credits_p2)
                     app_state = AppState.CHARACTER_SELECT
 
             elif app_state == AppState.MENU:
@@ -79,12 +82,19 @@ def main():
                         running = False
 
             elif app_state == AppState.CHARACTER_SELECT:
-                char_select.handle_input(event)
+                res = char_select.handle_input(event)
+                if res and res.get("action") in ("vs", "fight"):
+                    p1_char = res.get("p1_char", "carloni")
+                    p2_char = res.get("p2_char", "cavasso")
+                    selected_stage_id = res.get("stage_id", None)
+                    selected_mode = char_select.game_mode
+                    game_instance = Game(screen, p1_char, p2_char, selected_mode, stage_id=selected_stage_id)
+                    app_state = AppState.GAME
 
             elif app_state == AppState.VS_SCREEN:
                 res = vs_screen.handle_input(event)
                 if res == "fight":
-                    game_instance = Game(screen, p1_char, p2_char, selected_mode)
+                    game_instance = Game(screen, p1_char, p2_char, selected_mode, stage_id=selected_stage_id)
                     app_state = AppState.GAME
 
             elif app_state == AppState.GAME:
@@ -115,14 +125,16 @@ def main():
             if res and res.get("action") in ("vs", "fight"):
                 p1_char = res.get("p1_char", "carloni")
                 p2_char = res.get("p2_char", "cavasso")
-                vs_screen = VSScreen(screen, p1_char, p2_char)
-                app_state = AppState.VS_SCREEN
+                selected_stage_id = res.get("stage_id", None)
+                selected_mode = char_select.game_mode
+                game_instance = Game(screen, p1_char, p2_char, selected_mode, stage_id=selected_stage_id)
+                app_state = AppState.GAME
             char_select.draw(screen)
 
         elif app_state == AppState.VS_SCREEN:
             res = vs_screen.update(dt)
             if res == "fight":
-                game_instance = Game(screen, p1_char, p2_char, selected_mode)
+                game_instance = Game(screen, p1_char, p2_char, selected_mode, stage_id=selected_stage_id)
                 app_state = AppState.GAME
             vs_screen.draw(screen)
 
